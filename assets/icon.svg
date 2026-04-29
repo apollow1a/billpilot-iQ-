@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#g)"/>
+  <rect x="76" y="76" width="360" height="360" rx="74" fill="#fff"/>
+  <rect x="112" y="118" width="288" height="44" rx="18" fill="#dbeafe"/>
+  <circle cx="132" cy="213" r="17" fill="#db2777"/>
+  <rect x="172" y="197" width="218" height="32" rx="15" fill="#2563eb"/>
+  <circle cx="132" cy="279" r="17" fill="#047857"/>
+  <rect x="172" y="263" width="174" height="32" rx="15" fill="#2563eb"/>
+  <circle cx="132" cy="345" r="17" fill="#db2777"/>
+  <rect x="172" y="329" width="204" height="32" rx="15" fill="#2563eb"/>
+  <text x="256" y="414" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="96" font-weight="900" fill="#111827">IQ</text>
+</svg>

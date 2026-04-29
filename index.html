@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="BillPilot IQ" />
+  <meta name="description" content="Smart iPhone-ready bill and subscription tracker with budgeting insights." />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>BillPilot IQ</title>
+  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Smart money autopilot</p>
+        <h1>BillPilot IQ</h1>
+        <p class="hero-copy">Track subscriptions, bills, trials, due dates, card payments, budgets, and savings opportunities from your iPhone.</p>
+      </div>
+      <button id="quickAddBtn" class="primary-btn">+ Add</button>
+    </header>
+
+    <aside id="installTip" class="install-tip hidden">
+      <strong>iPhone install:</strong> open this page in Safari, tap Share, then <strong>Add to Home Screen</strong>.
+    </aside>
+
+    <nav class="tabbar" aria-label="Main navigation">
+      <button class="tab active" data-tab="dashboard">Home</button>
+      <button class="tab" data-tab="bills">Bills</button>
+      <button class="tab" data-tab="budget">Budget</button>
+      <button class="tab" data-tab="calendar">Due</button>
+      <button class="tab" data-tab="transactions">Bank</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+
+    <main>
+      <section id="dashboard" class="screen active-screen">
+        <div class="grid cards-grid">
+          <article class="card metric-card">
+            <span>Monthly recurring</span>
+            <strong id="monthlyRecurring">$0</strong>
+            <small id="monthlyRecurringSub">Across active bills</small>
+          </article>
+          <article class="card metric-card warning-card">
+            <span>Due in 7 days</span>
+            <strong id="due7">$0</strong>
+            <small id="due7Sub">No urgent bills</small>
+          </article>
+          <article class="card metric-card">
+            <span>Due in 30 days</span>
+            <strong id="due30">$0</strong>
+            <small id="due30Sub">Upcoming cash need</small>
+          </article>
+          <article class="card metric-card success-card">
+            <span>Left after bills</span>
+            <strong id="leftAfterBills">$0</strong>
+            <small id="leftAfterBillsSub">Based on monthly income</small>
+          </article>
+        </div>
+
+        <section class="card action-card">
+          <div>
+            <h2>Fast actions</h2>
+            <p>Import charges, connect a bank sandbox, or export iPhone Calendar reminders.</p>
+          </div>
+          <div class="action-row">
+            <button id="connectBankBtn" class="secondary-btn">Connect bank/card</button>
+            <button id="syncBankBtn" class="secondary-btn">Sync transactions</button>
+            <label class="secondary-btn file-label">Import CSV<input id="csvInput" type="file" accept=".csv,text/csv" hidden /></label>
+            <button id="downloadIcsBtn" class="secondary-btn">iPhone reminders</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Smart savings coach</h2>
+              <p>Suggestions update as bills, budgets, and transactions change.</p>
+            </div>
+            <span id="savingsScore" class="score-pill">0</span>
+          </div>
+          <div id="insights" class="insight-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Next bills</h2>
+              <p>The closest due dates across every recurring item.</p>
+            </div>
+          </div>
+          <div id="upcomingMini" class="compact-list"></div>
+        </section>
+      </section>
+
+      <section id="bills" class="screen">
+        <section class="card sticky-card">
+          <div class="section-header">
+            <div>
+              <h2>Subscriptions & bills</h2>
+              <p>Everything recurring: monthly, yearly, weekly, biweekly, quarterly, and custom.</p>
+            </div>
+            <button id="addBillBtn" class="primary-btn">+ New</button>
+          </div>
+          <div class="toolbar">
+            <input id="searchInput" type="search" placeholder="Search Netflix, rent, Verizon..." />
+            <select id="categoryFilter" aria-label="Category filter"><option value="all">All categories</option></select>
+            <select id="typeFilter" aria-label="Type filter">
+              <option value="all">All types</option>
+              <option value="subscription">Subscriptions</option>
+              <option value="bill">Bills</option>
+            </select>
+          </div>
+        </section>
+        <div id="billList" class="bill-list"></div>
+      </section>
+
+      <section id="budget" class="screen">
+        <section class="card">
+          <h2>Budget center</h2>
+          <p>Set your income and category caps. BillPilot IQ shows what recurring charges eat up every month.</p>
+          <div class="form-grid">
+            <label>Monthly take-home income
+              <input id="incomeInput" inputmode="decimal" type="number" min="0" step="0.01" placeholder="4200" />
+            </label>
+            <label>Default alert days before due
+              <input id="alertDaysInput" inputmode="numeric" type="number" min="0" max="30" step="1" />
+            </label>
+            <label>Currency
+              <select id="currencyInput">
+                <option value="USD">USD $</option>
+                <option value="CAD">CAD $</option>
+                <option value="EUR">EUR €</option>
+                <option value="GBP">GBP £</option>
+                <option value="AUD">AUD $</option>
+              </select>
+            </label>
+          </div>
+        </section>
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Category budgets</h2>
+              <p>Monthly recurring cost versus your target.</p>
+            </div>
+            <button id="saveBudgetBtn" class="secondary-btn">Save budgets</button>
+          </div>
+          <div id="budgetList" class="budget-list"></div>
+        </section>
+      </section>
+
+      <section id="calendar" class="screen">
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Due calendar</h2>
+              <p>Next 90 days of bills and subscriptions.</p>
+            </div>
+            <button id="downloadIcsBtn2" class="secondary-btn">Export .ics</button>
+          </div>
+          <div id="calendarList" class="calendar-list"></div>
+        </section>
+      </section>
+
+      <section id="transactions" class="screen">
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Bank/card tracking</h2>
+              <p>Use Plaid sandbox now, then switch to production keys when you are ready. You can also import a CSV from your bank/card.</p>
+            </div>
+          </div>
+          <div class="status-box" id="bankStatus">Bank connection not configured yet.</div>
+          <div class="action-row">
+            <button id="connectBankBtn2" class="primary-btn">Connect bank/card</button>
+            <button id="syncBankBtn2" class="secondary-btn">Sync</button>
+            <label class="secondary-btn file-label">Import CSV<input id="csvInput2" type="file" accept=".csv,text/csv" hidden /></label>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Detected recurring charges</h2>
+              <p>These come from imported or synced transactions and may be missing from your bill list.</p>
+            </div>
+          </div>
+          <div id="detectedCharges" class="insight-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Transactions</h2>
+              <p>Recent bank/card activity stored locally on this device.</p>
+            </div>
+            <button id="clearTransactionsBtn" class="danger-link">Clear</button>
+          </div>
+          <div id="transactionList" class="transaction-list"></div>
+        </section>
+      </section>
+
+      <section id="settings" class="screen">
+        <section class="card">
+          <h2>Privacy & data</h2>
+          <p>Your manual bills and imported transactions are stored in this browser on your iPhone. Bank API secrets stay on the backend, never in the app.</p>
+          <div class="action-row">
+            <button id="exportJsonBtn" class="secondary-btn">Export backup</button>
+            <label class="secondary-btn file-label">Import backup<input id="jsonInput" type="file" accept=".json,application/json" hidden /></label>
+            <button id="enableNotifyBtn" class="secondary-btn">Enable in-app alerts</button>
+          </div>
+        </section>
+        <section class="card">
+          <h2>Bank API settings</h2>
+          <p>Use the same origin by default, or set your backend URL if the server runs elsewhere.</p>
+          <label>Backend API base URL
+            <input id="apiBaseInput" type="url" placeholder="https://your-backend.example.com" />
+          </label>
+          <button id="saveApiBaseBtn" class="secondary-btn">Save API URL</button>
+        </section>
+        <section class="card danger-zone">
+          <h2>Danger zone</h2>
+          <p>Reset everything on this device.</p>
+          <button id="resetBtn" class="danger-btn">Delete local data</button>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="billDialog" class="bill-dialog">
+    <form method="dialog" id="billForm">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">Recurring item</p>
+          <h2 id="dialogTitle">Add bill</h2>
+        </div>
+        <button type="button" id="closeDialogBtn" class="icon-btn" aria-label="Close">×</button>
+      </div>
+      <input type="hidden" id="billId" />
+      <div class="form-grid">
+        <label>Name
+          <input id="billName" required placeholder="Netflix, rent, car insurance" />
+        </label>
+        <label>Type
+          <select id="billType">
+            <option value="subscription">Subscription</option>
+            <option value="bill">Bill</option>
+          </select>
+        </label>
+        <label>Amount
+          <input id="billAmount" required inputmode="decimal" type="number" min="0" step="0.01" placeholder="14.99" />
+        </label>
+        <label>Frequency
+          <select id="billFrequency">
+            <option value="weekly">Weekly</option>
+            <option value="biweekly">Biweekly</option>
+            <option value="monthly" selected>Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="twiceYearly">Twice a year</option>
+            <option value="yearly">Yearly</option>
+            <option value="customDays">Custom days</option>
+          </select>
+        </label>
+        <label id="customDaysLabel" class="hidden">Custom interval in days
+          <input id="customDays" inputmode="numeric" type="number" min="1" step="1" value="30" />
+        </label>
+        <label>Next due date
+          <input id="billDueDate" required type="date" />
+        </label>
+        <label>Category
+          <select id="billCategory"></select>
+        </label>
+        <label>Payment method
+          <input id="billPayment" placeholder="Apple Card, Chase, bank account" />
+        </label>
+        <label>Priority
+          <select id="billPriority">
+            <option value="essential">Essential</option>
+            <option value="useful">Useful</option>
+            <option value="nice-to-have">Nice-to-have</option>
+          </select>
+        </label>
+      </div>
+      <div class="check-row">
+        <label><input id="billAutopay" type="checkbox" /> Autopay enabled</label>
+        <label><input id="billActive" type="checkbox" checked /> Active</label>
+      </div>
+      <label>Notes
+        <textarea id="billNotes" rows="3" placeholder="Trial ends soon, cancel link, confirmation notes..."></textarea>
+      </label>
+      <menu class="dialog-actions">
+        <button type="button" id="deleteBillBtn" class="danger-link hidden">Delete</button>
+        <span></span>
+        <button type="button" id="cancelDialogBtn" class="secondary-btn">Cancel</button>
+        <button type="submit" class="primary-btn">Save</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
