@@ -1,5 +1,8 @@
 const STORAGE_KEY = 'billpilot-iq:v1';
 const API_BASE_KEY = 'billpilot-iq:api-base';
+const PERSONAL_REPORT_NAME = 'billpilot-apollo-private-report.json';
+const DEMO_SIGNATURE = ['Rent:1450', 'Netflix:15.49', 'Car insurance:118', 'iCloud storage:2.99'];
+let appUnlocked = false;
 
 const CATEGORIES = [
   'Housing', 'Utilities', 'Insurance', 'Phone/Internet', 'Streaming', 'Software',
@@ -105,7 +108,16 @@ function normalizeState(input) {
       paydayDate: input.settings?.paydayDate || isoDate(todayLocal()),
       autopilotMode: ['balanced', 'aggressive', 'gentle'].includes(input.settings?.autopilotMode) ? input.settings.autopilotMode : 'balanced',
       bankConnected: Boolean(input.settings?.bankConnected),
-      lastNotificationDate: input.settings?.lastNotificationDate || null
+      lastNotificationDate: input.settings?.lastNotificationDate || null,
+      ownerName: input.settings?.ownerName || 'Apollo',
+      buildLabel: input.settings?.buildLabel || "Apollo's personal build",
+      localOnly: input.settings?.localOnly !== false,
+      privacyReminder: input.settings?.privacyReminder !== false,
+      appLockEnabled: Boolean(input.settings?.appLockEnabled),
+      appLockHash: input.settings?.appLockHash || '',
+      lockWhenHidden: input.settings?.lockWhenHidden !== false,
+      firstRunAt: input.settings?.firstRunAt || new Date().toISOString(),
+      dataMode: input.settings?.dataMode || 'personal-only'
     }
   };
 }
@@ -150,25 +162,29 @@ function normalizeTransaction(txn) {
 function seedState() {
   const today = todayLocal();
   return {
-    bills: [
-      normalizeBill({ name: 'Rent', type: 'bill', amount: 1450, frequency: 'monthly', dueDate: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), category: 'Housing', paymentMethod: 'Bank account', autopay: true, priority: 'essential' }),
-      normalizeBill({ name: 'Netflix', type: 'subscription', amount: 15.49, frequency: 'monthly', dueDate: isoDate(new Date(today.getFullYear(), today.getMonth(), 18)), category: 'Streaming', paymentMethod: 'Credit card', autopay: true, priority: 'nice-to-have' }),
-      normalizeBill({ name: 'Car insurance', type: 'bill', amount: 118, frequency: 'monthly', dueDate: isoDate(new Date(today.getFullYear(), today.getMonth(), 22)), category: 'Insurance', paymentMethod: 'Debit card', autopay: true, priority: 'essential' }),
-      normalizeBill({ name: 'iCloud storage', type: 'subscription', amount: 2.99, frequency: 'monthly', dueDate: isoDate(new Date(today.getFullYear(), today.getMonth(), 9)), category: 'Software', paymentMethod: 'Apple Card', autopay: true, priority: 'useful' })
-    ],
+    bills: [],
     transactions: [],
     settings: {
-      income: 4200,
+      income: 0,
       currency: 'USD',
       alertDays: 3,
-      budgets: { ...defaultBudgets, Housing: 1600, Streaming: 60, Software: 80, Insurance: 180, Utilities: 250, 'Phone/Internet': 180, Transportation: 350, Food: 650 },
-      cashBuffer: 500,
-      monthlySavingsGoal: 250,
-      cushionFloor: 300,
+      budgets: { ...defaultBudgets },
+      cashBuffer: 0,
+      monthlySavingsGoal: 0,
+      cushionFloor: 0,
       paydayFrequency: 'biweekly',
       paydayDate: isoDate(today),
       autopilotMode: 'balanced',
-      bankConnected: false
+      bankConnected: false,
+      ownerName: 'Apollo',
+      buildLabel: "Apollo's personal build",
+      localOnly: true,
+      privacyReminder: true,
+      appLockEnabled: false,
+      appLockHash: '',
+      lockWhenHidden: true,
+      firstRunAt: new Date().toISOString(),
+      dataMode: 'personal-only'
     }
   };
 }
@@ -271,6 +287,7 @@ function render() {
   renderAutopilot();
   renderBrainPreview();
   renderSettings();
+  renderPersonalization();
   updateBankStatus();
 }
 
@@ -1308,6 +1325,11 @@ function mergeTransactions(incoming) {
 }
 
 async function connectBank() {
+  if (state.settings.localOnly) {
+    updateBankStatus('Local-only mode is on. Use Import CSV for the free private version.');
+    toast('Local-only mode is on. Use Import CSV for the free private version.');
+    return;
+  }
   const apiBase = getApiBase();
   try {
     const response = await fetch(`${apiBase}/api/create-link-token`, {
@@ -1351,6 +1373,11 @@ async function connectBank() {
 }
 
 async function syncBank() {
+  if (state.settings.localOnly) {
+    updateBankStatus('Local-only mode is on. Use Import CSV for the free private version.');
+    toast('Local-only mode is on. Use Import CSV for the free private version.');
+    return;
+  }
   const apiBase = getApiBase();
   try {
     const response = await fetch(`${apiBase}/api/transactions?userId=local-iphone-user`);
@@ -1386,6 +1413,10 @@ function updateBankStatus(message = null) {
   if (!box) return;
   if (message) {
     box.textContent = message;
+    return;
+  }
+  if (state.settings.localOnly) {
+    box.textContent = 'Local-only mode is on. For the free private version, use Import CSV instead of Plaid/bank sync.';
     return;
   }
   const apiBase = getApiBase() || 'same origin';
@@ -1504,6 +1535,279 @@ function checkDueNotifications(force = false) {
   saveState();
 }
 
+
+function renderPersonalization() {
+  const owner = state.settings.ownerName || 'Apollo';
+  const label = state.settings.buildLabel || `${owner}'s personal build`;
+  const appTitle = $('#appTitle');
+  if (appTitle) appTitle.textContent = `${owner}'s BillPilot IQ`;
+  document.title = `${owner}'s BillPilot IQ`;
+  const pill = $('#privateBuildPill');
+  if (pill) pill.textContent = state.settings.localOnly ? 'Private local-only build' : 'Bank backend mode';
+  const welcome = $('#ownerWelcome');
+  if (welcome) welcome.textContent = `${owner}'s private money cockpit`;
+  const privacyLine = $('#ownerPrivacyLine');
+  if (privacyLine) privacyLine.textContent = state.settings.localOnly
+    ? 'Local-only. Bills, transactions, lock PIN, and settings stay in this browser unless you export them.'
+    : 'Backend tools are visible. Keep API secrets only on your server, never in GitHub.';
+  const ownerInput = $('#ownerNameInput');
+  if (ownerInput) ownerInput.value = owner;
+  const labelInput = $('#buildLabelInput');
+  if (labelInput) labelInput.value = label;
+  const localOnly = $('#localOnlyInput');
+  if (localOnly) localOnly.value = state.settings.localOnly ? 'on' : 'off';
+  const privacyReminder = $('#privacyReminderInput');
+  if (privacyReminder) privacyReminder.value = state.settings.privacyReminder ? 'on' : 'off';
+  const lockWhenHidden = $('#lockWhenHiddenInput');
+  if (lockWhenHidden) lockWhenHidden.value = state.settings.lockWhenHidden ? 'on' : 'off';
+  const lockStatus = $('#lockStatus');
+  if (lockStatus) lockStatus.textContent = state.settings.appLockEnabled ? 'On' : 'Off';
+  renderVaultStats();
+  renderPrivacyAudit();
+  renderDataPurityReport();
+  toggleBankTools();
+}
+
+function renderVaultStats() {
+  const box = $('#vaultStats');
+  if (!box) return;
+  const monthly = activeBills().reduce((sum, bill) => sum + monthlyCost(bill), 0);
+  const annual = activeBills().reduce((sum, bill) => sum + annualCost(bill), 0);
+  const recurring = detectRecurringCharges();
+  const lastTxn = state.transactions.length ? state.transactions.map((txn) => txn.date).sort().at(-1) : 'None yet';
+  const stats = [
+    ['Owner', state.settings.ownerName || 'Apollo'],
+    ['Bills', String(state.bills.length)],
+    ['Transactions', String(state.transactions.length)],
+    ['Monthly burn', money(monthly)],
+    ['Annual commitments', money(annual)],
+    ['Recurring found from CSV', String(recurring.length)],
+    ['Last transaction', lastTxn]
+  ];
+  box.innerHTML = stats.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+}
+
+function renderPrivacyAudit() {
+  const box = $('#privacyAudit');
+  if (!box) return;
+  const items = [];
+  items.push({ tone: 'good', title: 'Device-only data', text: 'Manual bills and imported transactions stay in localStorage on this device/browser.' });
+  items.push({ tone: state.settings.localOnly ? 'good' : 'warn', title: 'Bank backend tools', text: state.settings.localOnly ? 'Hidden/disabled for your free personal-only setup.' : 'Visible. Use only if you deploy a private backend.' });
+  items.push({ tone: state.settings.appLockEnabled ? 'good' : 'warn', title: 'App PIN', text: state.settings.appLockEnabled ? 'Enabled on this device.' : 'Off. Turn it on if anyone else can access this browser.' });
+  if (state.settings.privacyReminder) {
+    items.push({ tone: 'warn', title: 'Public GitHub Pages reminder', text: 'The app shell and embedded screenshots are public if the repository is public. Your entered bill data is not uploaded.' });
+  }
+  box.innerHTML = items.map((item) => `<div class="audit-item ${item.tone}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.text)}</span></div>`).join('');
+}
+
+function renderDataPurityReport() {
+  const box = $('#dataPurityReport');
+  if (!box) return;
+  const demoCount = countDemoStarterBills();
+  const empty = !state.bills.length && !state.transactions.length;
+  const rows = [];
+  if (empty) {
+    rows.push({ type: 'info', title: 'Ready for your real data', text: 'No bills or transactions are saved yet. Add bills or import a CSV on your iPhone.' });
+  } else {
+    rows.push({ type: 'good', title: 'Personal local records', text: `${state.bills.length} bills and ${state.transactions.length} transactions saved only on this device.` });
+  }
+  if (demoCount) {
+    rows.push({ type: 'warn', title: 'Starter/demo bills detected', text: `${demoCount} starter item(s) look like demo data. Use Remove starter/demo bills to clean them out.` });
+  } else {
+    rows.push({ type: 'good', title: 'No starter demo bills detected', text: 'This build is ready to hold only your real information.' });
+  }
+  if (localStorage.getItem(API_BASE_KEY)) {
+    rows.push({ type: 'warn', title: 'Custom backend URL saved', text: 'A backend URL is stored. Clear it if you want fully local-only mode.' });
+  }
+  box.innerHTML = rows.map((row) => `
+    <article class="insight ${row.type}">
+      <strong>${escapeHtml(row.title)}</strong>
+      <p>${escapeHtml(row.text)}</p>
+    </article>
+  `).join('');
+}
+
+function toggleBankTools() {
+  const disabled = Boolean(state.settings.localOnly);
+  ['connectBankBtn','connectBankBtn2','syncBankBtn','syncBankBtn2'].forEach((idName) => {
+    const button = $('#' + idName);
+    if (!button) return;
+    button.disabled = disabled;
+    button.title = disabled ? 'Local-only mode is on. Use Import CSV for the free private version.' : '';
+    button.classList.toggle('is-disabled', disabled);
+  });
+}
+
+function countDemoStarterBills() {
+  return state.bills.filter((bill) => DEMO_SIGNATURE.includes(`${bill.name}:${Number(bill.amount || 0)}`)).length;
+}
+
+function removeDemoStarterBills() {
+  const before = state.bills.length;
+  state.bills = state.bills.filter((bill) => !DEMO_SIGNATURE.includes(`${bill.name}:${Number(bill.amount || 0)}`));
+  const removed = before - state.bills.length;
+  saveState();
+  render();
+  toast(removed ? `Removed ${removed} starter/demo item(s).` : 'No starter/demo items found.');
+}
+
+function saveOwnerSetup() {
+  const owner = ($('#ownerNameInput')?.value || '').trim() || 'Apollo';
+  state.settings.ownerName = owner;
+  state.settings.buildLabel = ($('#buildLabelInput')?.value || '').trim() || `${owner}'s personal build`;
+  state.settings.localOnly = ($('#localOnlyInput')?.value || 'on') === 'on';
+  state.settings.privacyReminder = ($('#privacyReminderInput')?.value || 'on') === 'on';
+  saveState();
+  render();
+  toast('Owner-only setup saved.');
+}
+
+function createPrivateReport() {
+  const monthlyByCategory = categoryMonthlySpend();
+  const recurringFromTransactions = detectRecurringCharges().map((item) => ({
+    merchant: item.name,
+    count: item.count,
+    averageAmount: item.amount,
+    frequency: item.frequency,
+    frequencyLabel: item.frequencyLabel
+  }));
+  const upcoming = upcomingOccurrences(60).slice(0, 25).map(({ bill, due, days }) => ({
+    name: bill.name,
+    amount: bill.amount,
+    category: bill.category,
+    dueDate: isoDate(due),
+    days
+  }));
+  return {
+    reportType: 'BillPilot IQ private report',
+    owner: state.settings.ownerName || 'Apollo',
+    generatedAt: new Date().toISOString(),
+    privacy: {
+      localOnly: state.settings.localOnly,
+      dataMode: state.settings.dataMode,
+      reminder: 'This file is created only when you export it. Keep it private.'
+    },
+    summary: {
+      bills: state.bills.length,
+      transactions: state.transactions.length,
+      monthlyRecurring: activeBills().reduce((sum, bill) => sum + monthlyCost(bill), 0),
+      annualCommitments: activeBills().reduce((sum, bill) => sum + annualCost(bill), 0),
+      dueIn30Days: dueAmountWithin(30),
+      income: state.settings.income || 0
+    },
+    monthlyByCategory,
+    recurringFromTransactions,
+    upcoming,
+    bills: state.bills,
+    transactions: state.transactions
+  };
+}
+
+function exportPrivateReport() {
+  const payload = createPrivateReport();
+  downloadFile(PERSONAL_REPORT_NAME, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+  toast('Private report exported. Keep it somewhere safe.');
+}
+
+async function copyDataSummary() {
+  const report = createPrivateReport();
+  const summary = `${report.owner}'s BillPilot IQ summary\nBills: ${report.summary.bills}\nTransactions: ${report.summary.transactions}\nMonthly recurring: ${money(report.summary.monthlyRecurring)}\nDue in 30 days: ${money(report.summary.dueIn30Days)}\nLocal-only: ${report.privacy.localOnly ? 'yes' : 'no'}`;
+  try {
+    await navigator.clipboard.writeText(summary);
+    toast('Data summary copied.');
+  } catch (error) {
+    toast('Could not copy. Export private report instead.');
+  }
+}
+
+async function hashPin(pin) {
+  const value = String(pin || '');
+  if (!window.crypto?.subtle) return `fallback:${btoa(value).split('').reverse().join('')}`;
+  const buffer = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function setPinLock() {
+  const pin = $('#newPinInput')?.value || '';
+  const confirm = $('#confirmPinInput')?.value || '';
+  if (pin.length < 4) return toast('Use a PIN with at least 4 digits.');
+  if (pin !== confirm) return toast('PINs do not match.');
+  state.settings.appLockHash = await hashPin(pin);
+  state.settings.appLockEnabled = true;
+  state.settings.lockWhenHidden = ($('#lockWhenHiddenInput')?.value || 'on') === 'on';
+  saveState();
+  $('#newPinInput').value = '';
+  $('#confirmPinInput').value = '';
+  appUnlocked = true;
+  render();
+  toast('App PIN enabled.');
+}
+
+function clearPinLock() {
+  const ok = confirm('Turn off the app PIN on this device?');
+  if (!ok) return;
+  state.settings.appLockEnabled = false;
+  state.settings.appLockHash = '';
+  saveState();
+  appUnlocked = true;
+  render();
+  hideLockScreen();
+  toast('App PIN turned off.');
+}
+
+function showLockScreen() {
+  if (!state.settings.appLockEnabled || appUnlocked) return;
+  const screen = $('#lockScreen');
+  if (!screen) return;
+  screen.classList.remove('hidden');
+  setTimeout(() => $('#unlockPinInput')?.focus(), 50);
+}
+
+function hideLockScreen() {
+  $('#lockScreen')?.classList.add('hidden');
+}
+
+async function unlockApp() {
+  const pin = $('#unlockPinInput')?.value || '';
+  const expected = state.settings.appLockHash;
+  const actual = await hashPin(pin);
+  if (actual !== expected) {
+    $('#unlockHint').textContent = 'Wrong PIN. Try again.';
+    return;
+  }
+  appUnlocked = true;
+  $('#unlockPinInput').value = '';
+  $('#unlockHint').textContent = 'Your PIN stays on this device.';
+  hideLockScreen();
+  toast('Unlocked.');
+}
+
+function lockAppNow() {
+  if (!state.settings.appLockEnabled) {
+    switchTab('settings');
+    toast('Set a PIN in Settings first.');
+    return;
+  }
+  appUnlocked = false;
+  showLockScreen();
+}
+
+function setupLocking() {
+  appUnlocked = !state.settings.appLockEnabled;
+  $('#unlockBtn')?.addEventListener('click', unlockApp);
+  $('#unlockPinInput')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') unlockApp();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state.settings.appLockEnabled && state.settings.lockWhenHidden) {
+      appUnlocked = false;
+    }
+    if (!document.hidden) showLockScreen();
+  });
+  showLockScreen();
+}
+
 function setupStaticControls() {
   CATEGORIES.forEach((category) => {
     const option = new Option(category, category);
@@ -1542,6 +1846,13 @@ function setupStaticControls() {
   $('#clearTransactionsBtn').addEventListener('click', clearTransactions);
   $('#csvInput').addEventListener('change', (event) => importCsv(event.target.files[0]));
   $('#csvInput2').addEventListener('change', (event) => importCsv(event.target.files[0]));
+  $('#saveOwnerBtn')?.addEventListener('click', saveOwnerSetup);
+  $('#setPinBtn')?.addEventListener('click', setPinLock);
+  $('#clearPinBtn')?.addEventListener('click', clearPinLock);
+  $('#lockNowBtn')?.addEventListener('click', lockAppNow);
+  $('#removeDemoBtn')?.addEventListener('click', removeDemoStarterBills);
+  $('#exportPrivateReportBtn')?.addEventListener('click', exportPrivateReport);
+  $('#copyDataSummaryBtn')?.addEventListener('click', copyDataSummary);
 
   if (!window.navigator.standalone && /iPhone|iPad|iPod/i.test(navigator.userAgent)) {
     $('#installTip').classList.remove('hidden');
@@ -1635,6 +1946,7 @@ async function registerServiceWorker() {
 }
 
 setupStaticControls();
+setupLocking();
 render();
 registerServiceWorker();
 checkDueNotifications();

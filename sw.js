@@ -1,4 +1,4 @@
-const CACHE_NAME = 'billpilot-iq-v2';
+const CACHE_NAME = 'billpilot-iq-v3-apollo';
 const APP_SHELL = [
   './',
   './index.html',
@@ -6,7 +6,12 @@ const APP_SHELL = [
   './app.js',
   './manifest.webmanifest',
   './assets/icon-192.png',
-  './assets/icon-512.png'
+  './assets/icon-512.png',
+  './assets/my-app-live-1.jpeg',
+  './assets/my-app-live-2.jpeg',
+  './assets/my-app-live-3.jpeg',
+  './assets/my-github-setup-1.jpeg',
+  './assets/my-github-pages-setup.jpeg'
 ];
 
 self.addEventListener('install', (event) => {

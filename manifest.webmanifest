@@ -1,7 +1,7 @@
 {
-  "name": "BillPilot IQ",
+  "name": "Apollo BillPilot IQ",
   "short_name": "BillPilot",
-  "description": "Smart bill, subscription, and budget tracker for iPhone.",
+  "description": "Apollo personal-only smart bill, subscription, and budget tracker for iPhone.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

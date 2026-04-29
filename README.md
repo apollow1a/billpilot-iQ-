@@ -175,3 +175,18 @@ assets/                 App icons
 sample-bank-export.csv  Import test file
 server/                 Plaid sandbox backend
 ```
+
+
+## Apollo personal-only advanced build
+
+This version is set up as a private local-only build by default:
+
+- New installs start empty instead of using demo bills.
+- Your screenshots are included under Settings → Your build images.
+- Manual bills, imported CSV transactions, app lock settings, and profile settings stay in this browser/device through localStorage.
+- Bank/Plaid buttons are disabled while Local-only mode is on. Use CSV import for the free setup.
+- Settings → Data cleanup can remove starter/demo bills if an older version already seeded them.
+- Settings → App lock lets you set a local PIN for this device.
+- Settings → Export private report creates a JSON report only when you choose to export it.
+
+Important: if you upload this package to a public GitHub repository, the app files and embedded screenshots are public. Your entered bills/transactions are still not uploaded to GitHub because they are stored locally in the browser.

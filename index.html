@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#111827" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="BillPilot IQ" />
-  <meta name="description" content="Smart iPhone-ready bill and subscription tracker with budgeting insights." />
+  <meta name="apple-mobile-web-app-title" content="Apollo BillPilot" />
+  <meta name="description" content="Apollo personal-only iPhone bill, subscription, budget, and savings tracker." />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="assets/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
-  <title>BillPilot IQ</title>
+  <title>Apollo BillPilot IQ</title>
   <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js" defer></script>
 </head>
 <body>
@@ -19,10 +19,10 @@
     <header class="hero">
       <div>
         <p class="eyebrow">Smart money autopilot</p>
-        <h1>BillPilot IQ</h1>
+        <h1 id="appTitle">BillPilot IQ</h1>
         <p class="hero-copy">Track subscriptions, bills, trials, due dates, card payments, budgets, and savings opportunities from your iPhone.</p>
       </div>
-      <button id="quickAddBtn" class="primary-btn">+ Add</button>
+      <div class="hero-actions"><span id="privateBuildPill" class="privacy-pill">Private local-only build</span><button id="quickAddBtn" class="primary-btn">+ Add</button></div>
     </header>
 
     <aside id="installTip" class="install-tip hidden">
@@ -75,6 +75,18 @@
             <label class="secondary-btn file-label">Import CSV<input id="csvInput" type="file" accept=".csv,text/csv" hidden /></label>
             <button id="downloadIcsBtn" class="secondary-btn">iPhone reminders</button>
           </div>
+        </section>
+
+        <section class="card owner-command-card">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Apollo-only mode</p>
+              <h2 id="ownerWelcome">Your private money cockpit</h2>
+              <p id="ownerPrivacyLine">Local-only. Your bills and transactions stay on this device unless you export them.</p>
+            </div>
+            <button id="lockNowBtn" class="secondary-btn">Lock app</button>
+          </div>
+          <div id="vaultStats" class="vault-stats"></div>
         </section>
 
         <section class="card">
@@ -334,6 +346,97 @@
           </div>
         </section>
 
+        <section class="card owner-card">
+          <div class="section-header">
+            <div>
+              <h2>Owner-only setup</h2>
+              <p>Personalize this build and keep it for you only until you decide to share it.</p>
+            </div>
+            <button id="saveOwnerBtn" class="secondary-btn">Save owner setup</button>
+          </div>
+          <div class="form-grid">
+            <label>Owner name
+              <input id="ownerNameInput" placeholder="Apollo" />
+            </label>
+            <label>Private build label
+              <input id="buildLabelInput" placeholder="Apollo's personal build" />
+            </label>
+            <label>Local-only mode
+              <select id="localOnlyInput">
+                <option value="on">On - hide paid bank sync</option>
+                <option value="off">Off - show bank backend tools</option>
+              </select>
+            </label>
+            <label>Privacy reminder
+              <select id="privacyReminderInput">
+                <option value="on">Show public GitHub warning</option>
+                <option value="off">Hide warning</option>
+              </select>
+            </label>
+          </div>
+          <div id="privacyAudit" class="privacy-audit"></div>
+        </section>
+
+        <section class="card lock-card">
+          <div class="section-header">
+            <div>
+              <h2>App lock</h2>
+              <p>Add a personal PIN to protect your local bills when someone opens the app on this device.</p>
+            </div>
+            <span id="lockStatus" class="score-pill">Off</span>
+          </div>
+          <div class="form-grid">
+            <label>New PIN
+              <input id="newPinInput" type="password" inputmode="numeric" autocomplete="new-password" placeholder="4+ digits" />
+            </label>
+            <label>Confirm PIN
+              <input id="confirmPinInput" type="password" inputmode="numeric" autocomplete="new-password" placeholder="Repeat PIN" />
+            </label>
+            <label>Lock when app goes background
+              <select id="lockWhenHiddenInput">
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+            </label>
+          </div>
+          <div class="action-row">
+            <button id="setPinBtn" class="secondary-btn">Set / change PIN</button>
+            <button id="clearPinBtn" class="danger-link">Turn off PIN</button>
+          </div>
+        </section>
+
+        <section class="card gallery-card">
+          <div class="section-header">
+            <div>
+              <h2>Your build images</h2>
+              <p>I added the screenshots you sent so this private build includes your setup proof and live app photos.</p>
+            </div>
+          </div>
+          <div class="image-gallery">
+            <figure><img src="assets/my-app-live-1.jpeg" alt="BillPilot IQ running live" loading="lazy" /><figcaption>Live app view</figcaption></figure>
+            <figure><img src="assets/my-app-live-2.jpeg" alt="BillPilot IQ dashboard on laptop" loading="lazy" /><figcaption>Dashboard proof</figcaption></figure>
+            <figure><img src="assets/my-app-live-3.jpeg" alt="BillPilot IQ installed from GitHub Pages" loading="lazy" /><figcaption>Working page</figcaption></figure>
+            <figure><img src="assets/my-github-setup-1.jpeg" alt="GitHub repository upload" loading="lazy" /><figcaption>GitHub upload</figcaption></figure>
+            <figure><img src="assets/my-github-pages-setup.jpeg" alt="GitHub Pages settings" loading="lazy" /><figcaption>Pages setup</figcaption></figure>
+          </div>
+          <p class="small-warning">Note: if you upload these images to a public GitHub repository, the image files can be viewed by anyone with the repo or direct URL. Your app data still stays local on your device.</p>
+        </section>
+
+        <section class="card data-tools-card">
+          <div class="section-header">
+            <div>
+              <h2>Data cleanup & personal-only control</h2>
+              <p>Remove starter/demo bills, audit your local data, and make sure the app contains only your real data.</p>
+            </div>
+          </div>
+          <div class="action-row">
+            <button id="removeDemoBtn" class="secondary-btn">Remove starter/demo bills</button>
+            <button id="exportPrivateReportBtn" class="secondary-btn">Export private report</button>
+            <button id="copyDataSummaryBtn" class="secondary-btn">Copy data summary</button>
+          </div>
+          <div id="dataPurityReport" class="insight-list"></div>
+        </section>
+
         <section class="card">
           <h2>Bank API settings</h2>
           <p>Use the same origin by default, or set your backend URL if the server runs elsewhere.</p>
@@ -430,6 +533,16 @@
     </form>
   </dialog>
 
+  <div id="lockScreen" class="lock-screen hidden" role="dialog" aria-modal="true" aria-labelledby="lockTitle">
+    <div class="lock-panel">
+      <p class="eyebrow">Private mode</p>
+      <h2 id="lockTitle">Unlock BillPilot IQ</h2>
+      <p>This device has an app PIN enabled. Enter it to view your bills and transactions.</p>
+      <input id="unlockPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" />
+      <button id="unlockBtn" class="primary-btn">Unlock</button>
+      <small id="unlockHint">Your PIN stays on this device.</small>
+    </div>
+  </div>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="app.js" type="module"></script>
 </body>
