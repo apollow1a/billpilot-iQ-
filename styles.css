@@ -768,3 +768,61 @@ label {
   .image-gallery { grid-template-columns: 1fr 1fr; }
   .image-gallery img { height: 140px; }
 }
+
+/* 10X Command Center upgrade */
+.command-hero-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  background: radial-gradient(circle at top left, rgba(37,99,235,.18), transparent 34%), linear-gradient(135deg, #0f172a, #1e3a8a 62%, #312e81);
+  color: white;
+  border: 0;
+  overflow: hidden;
+}
+.command-hero-card p { color: rgba(255,255,255,.78); }
+.command-badge {
+  width: 132px;
+  height: 132px;
+  border-radius: 36px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  border: 1px solid rgba(255,255,255,.24);
+  background: rgba(255,255,255,.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2);
+}
+.command-badge span { font-size: 2.4rem; font-weight: 950; letter-spacing: -.08em; }
+.command-badge small { color: rgba(255,255,255,.72); font-weight: 850; }
+.command-metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.command-metric { border-radius: 24px; padding: 18px; background: rgba(255,255,255,.9); border: 1px solid var(--line); box-shadow: 0 18px 40px rgba(15,23,42,.06); }
+.command-metric span, .command-metric small { display: block; color: var(--muted); font-weight: 800; }
+.command-metric strong { display: block; font-size: 1.55rem; margin: 6px 0; letter-spacing: -.04em; }
+.command-metric.good { background: var(--good-soft); border-color: rgba(4,120,87,.22); }
+.command-metric.warn { background: var(--warn-soft); border-color: rgba(180,83,9,.22); }
+.command-metric.danger { background: var(--danger-soft); border-color: rgba(190,18,60,.22); }
+.command-panel { border: 1px solid rgba(37,99,235,.12); }
+.plan-list, .review-queue, .optimizer-grid, .rules-grid { display: grid; gap: 12px; }
+.plan-step { display: grid; grid-template-columns: 42px 1fr; gap: 12px; align-items: start; border: 1px solid var(--line); border-radius: 20px; padding: 14px; background: var(--panel-2); }
+.plan-step > span { width: 42px; height: 42px; border-radius: 14px; display:grid; place-items:center; font-weight: 950; background: white; box-shadow: 0 8px 20px rgba(15,23,42,.08); }
+.plan-step p, .review-item p, .rule-card p, .optimizer-card p { margin: 5px 0 0; color: var(--muted); }
+.plan-step.good, .review-item.good, .rule-card.good, .optimizer-card.good { background: var(--good-soft); border-color: rgba(4,120,87,.22); }
+.plan-step.warn, .review-item.warn, .rule-card.warn, .optimizer-card.warn { background: var(--warn-soft); border-color: rgba(180,83,9,.22); }
+.plan-step.danger, .review-item.danger, .rule-card.danger, .optimizer-card.danger { background: var(--danger-soft); border-color: rgba(190,18,60,.22); }
+.plan-step.info, .review-item.info, .rule-card.info, .optimizer-card.info { background: rgba(219,234,254,.72); border-color: rgba(37,99,235,.18); }
+.review-item { display: flex; justify-content: space-between; gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 20px; padding: 14px; background: var(--panel-2); }
+.review-item span { white-space: nowrap; border-radius: 999px; padding: 7px 10px; background: white; font-size: .78rem; font-weight: 900; color: var(--muted); }
+.script-box { white-space: pre-wrap; word-break: break-word; background: #0f172a; color: #e5e7eb; border-radius: 22px; padding: 18px; min-height: 190px; line-height: 1.55; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; border: 1px solid rgba(255,255,255,.08); }
+.optimizer-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.optimizer-card, .rule-card { border: 1px solid var(--line); border-radius: 20px; padding: 14px; background: var(--panel-2); }
+.optimizer-card small { display:block; color: var(--muted); margin-top: 6px; }
+.projection-chart { height: 220px; display: grid; grid-template-columns: repeat(12, 1fr); align-items: end; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 24px; background: linear-gradient(180deg, rgba(248,250,252,.9), rgba(239,246,255,.7)); overflow-x: auto; }
+.projection-month { height: 100%; min-width: 34px; display: grid; align-content: end; gap: 8px; text-align: center; color: var(--muted); font-size: .75rem; font-weight: 800; }
+.projection-bar { border-radius: 999px 999px 10px 10px; background: linear-gradient(180deg, #2563eb, #0f172a); min-height: 8px; }
+.rules-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.rule-card span { display:inline-flex; border-radius:999px; padding: 5px 9px; font-size:.72rem; font-weight:950; background:white; color: var(--muted); margin-bottom: 8px; }
+.vault-encryption-box { margin-top: 16px; display: grid; gap: 12px; border: 1px solid rgba(37,99,235,.14); border-radius: 24px; padding: 16px; background: linear-gradient(135deg, rgba(239,246,255,.9), rgba(255,255,255,.9)); }
+.vault-encryption-box p { margin: 4px 0 0; color: var(--muted); }
+@media (min-width: 861px) { .tabbar { grid-template-columns: repeat(8, 1fr); } }
+@media (max-width: 860px) { .tabbar { grid-template-columns: repeat(4, 1fr); } .command-hero-card { flex-direction: column; align-items: flex-start; } .command-badge { width: 100%; height: auto; padding: 18px; } .projection-chart { grid-template-columns: repeat(12, minmax(36px, 1fr)); } }
+@media (max-width: 520px) { .review-item { align-items: flex-start; flex-direction: column; } .script-box { font-size: .82rem; } }

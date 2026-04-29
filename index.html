@@ -7,11 +7,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Apollo BillPilot" />
-  <meta name="description" content="Apollo personal-only iPhone bill, subscription, budget, and savings tracker." />
+  <meta name="description" content="Apollo personal-only iPhone money operating system for bills, subscriptions, budgets, due dates, forecasts, negotiation scripts, and private vault backups." />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="assets/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
-  <title>Apollo BillPilot IQ</title>
+  <title>Apollo BillPilot IQ Ultra</title>
   <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js" defer></script>
 </head>
 <body>
@@ -19,8 +19,8 @@
     <header class="hero">
       <div>
         <p class="eyebrow">Smart money autopilot</p>
-        <h1 id="appTitle">BillPilot IQ</h1>
-        <p class="hero-copy">Track subscriptions, bills, trials, due dates, card payments, budgets, and savings opportunities from your iPhone.</p>
+        <h1 id="appTitle">BillPilot IQ Ultra</h1>
+        <p class="hero-copy">Your private iPhone money operating system: bills, subscriptions, budgets, due dates, savings missions, cash forecasts, negotiation scripts, encrypted backups, and CSV intelligence.</p>
       </div>
       <div class="hero-actions"><span id="privateBuildPill" class="privacy-pill">Private local-only build</span><button id="quickAddBtn" class="primary-btn">+ Add</button></div>
     </header>
@@ -35,6 +35,7 @@
       <button class="tab" data-tab="budget">Budget</button>
       <button class="tab" data-tab="calendar">Due</button>
       <button class="tab" data-tab="autopilot">AI Coach</button>
+      <button class="tab" data-tab="command">Command</button>
       <button class="tab" data-tab="transactions">Bank</button>
       <button class="tab" data-tab="settings">Settings</button>
     </nav>
@@ -260,6 +261,97 @@
         </section>
       </section>
 
+      <section id="command" class="screen">
+        <section class="card command-hero-card">
+          <div>
+            <p class="eyebrow">Apollo private money OS</p>
+            <h2>Command Center 10X</h2>
+            <p>This layer turns the app into a personal finance cockpit: review queue, bill intelligence, cash runway, negotiation scripts, encrypted backups, due-date optimizer, and 12-month projection.</p>
+          </div>
+          <div class="command-badge"><span id="commandScoreBig">0</span><small>readiness</small></div>
+        </section>
+
+        <section class="command-metrics-grid" id="commandMetrics"></section>
+
+        <section class="card command-panel">
+          <div class="section-header">
+            <div>
+              <h2>One-tap operating plan</h2>
+              <p>The highest-impact next moves, built from your bills, due dates, budgets, cash buffer, and imported transactions.</p>
+            </div>
+            <button id="copyOperatingPlanBtn" class="secondary-btn">Copy plan</button>
+          </div>
+          <div id="operatingPlan" class="plan-list"></div>
+        </section>
+
+        <section class="card command-panel">
+          <div class="section-header">
+            <div>
+              <h2>Smart review queue</h2>
+              <p>Items BillPilot thinks you should review next: hidden recurring charges, price increases, manual payments, trials, and budget pressure.</p>
+            </div>
+            <button id="addAllDetectedBtn" class="secondary-btn">Add all detected</button>
+          </div>
+          <div id="reviewQueue" class="review-queue"></div>
+        </section>
+
+        <section class="card command-panel">
+          <div class="section-header">
+            <div>
+              <h2>Bill negotiator</h2>
+              <p>Generate a custom cancel/discount script for any bill or subscription. It stays on your device.</p>
+            </div>
+            <button id="copyNegotiatorBtn" class="secondary-btn">Copy script</button>
+          </div>
+          <div class="form-grid">
+            <label>Choose item
+              <select id="negotiatorBillSelect"></select>
+            </label>
+            <label>Goal
+              <select id="negotiatorGoalSelect">
+                <option value="discount">Ask for a lower price</option>
+                <option value="cancel">Cancel or pause</option>
+                <option value="fee">Remove fee / credit account</option>
+                <option value="annual">Ask for annual or loyalty deal</option>
+              </select>
+            </label>
+          </div>
+          <pre id="negotiatorScript" class="script-box"></pre>
+        </section>
+
+        <section class="card command-panel">
+          <div class="section-header">
+            <div>
+              <h2>Due-date optimizer</h2>
+              <p>Finds bills that may hit at the wrong time and suggests better due-date windows around payday.</p>
+            </div>
+          </div>
+          <div id="dueDateOptimizer" class="optimizer-grid"></div>
+        </section>
+
+        <section class="card command-panel">
+          <div class="section-header">
+            <div>
+              <h2>12-month projection</h2>
+              <p>Visualizes the next year of recurring commitments so yearly and quarterly charges do not surprise you.</p>
+            </div>
+          </div>
+          <div id="projectionChart" class="projection-chart"></div>
+          <div id="projectionList" class="compact-list"></div>
+        </section>
+
+        <section class="card command-panel">
+          <div class="section-header">
+            <div>
+              <h2>Local rules engine</h2>
+              <p>Private on-device checks for duplicates, risky payment timing, no-cancel-link items, over-budget categories, and savings leaks.</p>
+            </div>
+          </div>
+          <div id="rulesEngine" class="rules-grid"></div>
+        </section>
+      </section>
+
+
       <section id="transactions" class="screen">
         <section class="card">
           <div class="section-header">
@@ -306,6 +398,17 @@
             <button id="exportJsonBtn" class="secondary-btn">Export backup</button>
             <label class="secondary-btn file-label">Import backup<input id="jsonInput" type="file" accept=".json,application/json" hidden /></label>
             <button id="enableNotifyBtn" class="secondary-btn">Enable in-app alerts</button>
+          </div>
+          <div class="vault-encryption-box">
+            <div>
+              <strong>Encrypted private backup</strong>
+              <p>Lock your backup file with a password before saving it somewhere else. The password is never stored.</p>
+            </div>
+            <input id="vaultPasswordInput" type="password" autocomplete="new-password" placeholder="Backup password" />
+            <div class="action-row">
+              <button id="exportEncryptedBtn" class="secondary-btn">Export encrypted</button>
+              <label class="secondary-btn file-label">Import encrypted<input id="encryptedJsonInput" type="file" accept=".json,application/json,.bpvault" hidden /></label>
+            </div>
           </div>
         </section>
         <section class="card premium-card">

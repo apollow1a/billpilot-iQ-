@@ -117,7 +117,8 @@ function normalizeState(input) {
       appLockHash: input.settings?.appLockHash || '',
       lockWhenHidden: input.settings?.lockWhenHidden !== false,
       firstRunAt: input.settings?.firstRunAt || new Date().toISOString(),
-      dataMode: input.settings?.dataMode || 'personal-only'
+      dataMode: input.settings?.dataMode || 'personal-only',
+      lastCommandPlan: input.settings?.lastCommandPlan || ''
     }
   };
 }
@@ -184,7 +185,8 @@ function seedState() {
       appLockHash: '',
       lockWhenHidden: true,
       firstRunAt: new Date().toISOString(),
-      dataMode: 'personal-only'
+      dataMode: 'personal-only',
+      lastCommandPlan: ''
     }
   };
 }
@@ -286,6 +288,7 @@ function render() {
   renderInsights();
   renderAutopilot();
   renderBrainPreview();
+  renderCommandCenter();
   renderSettings();
   renderPersonalization();
   updateBankStatus();
@@ -1044,6 +1047,401 @@ function shortDateRange(start, end) {
 }
 
 
+function renderCommandCenter() {
+  const metricsBox = $('#commandMetrics');
+  if (!metricsBox) return;
+  const metrics = buildCommandMetrics();
+  const score = metrics.readinessScore;
+  const scoreBig = $('#commandScoreBig');
+  if (scoreBig) scoreBig.textContent = String(score);
+  metricsBox.innerHTML = [
+    { label: 'Money OS readiness', value: `${score}/100`, body: metrics.readinessLabel, tone: score >= 76 ? 'good' : score >= 50 ? 'warn' : 'danger' },
+    { label: 'Cash runway', value: metrics.runwayLabel, body: metrics.runwayBody, tone: metrics.runwayTone },
+    { label: 'Savings leak', value: money(metrics.savingsLeak), body: 'estimated monthly opportunity', tone: metrics.savingsLeak > 75 ? 'warn' : 'good' },
+    { label: 'Private vault', value: state.settings.appLockEnabled ? 'Locked' : 'Open', body: state.settings.localOnly ? 'local-only mode on' : 'backend tools visible', tone: state.settings.appLockEnabled && state.settings.localOnly ? 'good' : 'warn' }
+  ].map((item) => `
+    <article class="command-metric ${escapeAttr(item.tone)}">
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.value)}</strong>
+      <small>${escapeHtml(item.body)}</small>
+    </article>
+  `).join('');
+  renderOperatingPlan(metrics);
+  renderReviewQueue(metrics);
+  renderNegotiator();
+  renderDueDateOptimizer(metrics);
+  renderProjection();
+  renderRulesEngine(metrics);
+}
+
+function buildCommandMetrics() {
+  const bills = activeBills();
+  const monthly = bills.reduce((sum, bill) => sum + monthlyCost(bill), 0);
+  const income = Number(state.settings.income || 0);
+  const buffer = Number(state.settings.cashBuffer || 0);
+  const cushion = Number(state.settings.cushionFloor || 0);
+  const due30 = dueAmountWithin(30);
+  const detected = detectRecurringCharges();
+  const anomalies = buildAnomalies({ skipHealth: true });
+  const spendStats = spendPulseStats();
+  const manualSoon = upcomingOccurrences(14).filter(({ bill }) => !bill.autopay).length;
+  const subscriptions = bills.filter((bill) => bill.type === 'subscription');
+  const niceToHave = subscriptions.filter((bill) => bill.priority === 'nice-to-have');
+  const niceMonthly = niceToHave.reduce((sum, bill) => sum + monthlyCost(bill), 0);
+  const duplicates = findDuplicateBills();
+  const overBudgets = Object.entries(categoryMonthlySpend()).filter(([category, spend]) => Number(state.settings.budgets[category] || 0) > 0 && spend > Number(state.settings.budgets[category] || 0));
+  const readinessPieces = [
+    bills.length ? 14 : 0,
+    income > 0 ? 14 : 0,
+    state.settings.cashBuffer > 0 ? 12 : 0,
+    state.settings.cushionFloor > 0 ? 8 : 0,
+    state.transactions.length ? 12 : 0,
+    state.settings.appLockEnabled ? 10 : 0,
+    state.settings.localOnly ? 10 : 0,
+    Object.values(state.settings.budgets || {}).some((value) => Number(value) > 0) ? 10 : 0,
+    bills.some((bill) => bill.cancelUrl) ? 5 : 0,
+    bills.some((bill) => bill.trialEndDate || bill.contractEndDate) ? 5 : 0
+  ];
+  const readinessScore = Math.min(100, readinessPieces.reduce((sum, value) => sum + value, 0));
+  const netMonthly = income ? income - monthly - Number(state.settings.monthlySavingsGoal || 0) : 0;
+  const sixtyDayBills = dueAmountWithin(60);
+  const expectedIncome60 = income ? income * 2 : 0;
+  const projected60 = buffer + expectedIncome60 - sixtyDayBills;
+  let runwayTone = 'good';
+  let runwayLabel = income ? money(projected60) : 'Set income';
+  let runwayBody = income ? 'projected after 60 days' : 'add income for forecast';
+  if (income && projected60 < cushion) { runwayTone = 'danger'; runwayBody = 'below comfort cushion'; }
+  else if (income && projected60 < cushion + due30) { runwayTone = 'warn'; runwayBody = 'watch next bill cluster'; }
+  const savingsLeak = niceMonthly + detected.reduce((sum, item) => sum + item.amount, 0) * 0.35 + overBudgets.reduce((sum, [, spend]) => sum + spend * 0.12, 0);
+  const readinessLabel = readinessScore >= 80 ? 'strong personal setup' : readinessScore >= 55 ? 'good, needs tuning' : 'finish setup steps';
+  return { bills, monthly, income, buffer, cushion, due30, detected, anomalies, spendStats, manualSoon, subscriptions, niceToHave, duplicates, overBudgets, readinessScore, readinessLabel, netMonthly, projected60, runwayTone, runwayLabel, runwayBody, savingsLeak };
+}
+
+function renderOperatingPlan(metrics) {
+  const box = $('#operatingPlan');
+  if (!box) return;
+  const plan = buildOperatingPlan(metrics);
+  state.settings.lastCommandPlan = plan.map((item, index) => `${index + 1}. ${item.title}: ${item.body}`).join('\n');
+  box.innerHTML = plan.map((item, index) => `
+    <article class="plan-step ${escapeAttr(item.tone)}">
+      <span>${index + 1}</span>
+      <div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.body)}</p></div>
+    </article>
+  `).join('');
+}
+
+function buildOperatingPlan(metrics) {
+  const plan = [];
+  if (!metrics.bills.length) plan.push({ title: 'Build your base list', body: 'Add rent, phone, insurance, cards, subscriptions, and utilities so the app can forecast properly.', tone: 'danger' });
+  if (!metrics.income) plan.push({ title: 'Set monthly take-home income', body: 'Budget math gets much smarter after income is saved in the Budget tab.', tone: 'warn' });
+  if (!state.transactions.length) plan.push({ title: 'Import one bank/card CSV', body: 'CSV import unlocks recurring-charge detection, price-change scanning, and hidden subscription discovery while staying free.', tone: 'warn' });
+  if (metrics.detected.length) plan.push({ title: 'Review hidden recurring charges', body: `${metrics.detected.length} recurring pattern(s) were found from transactions. Add real ones or investigate/cancel them.`, tone: 'danger' });
+  const trial = activeBills().find((bill) => bill.trialEndDate && daysBetween(todayLocal(), parseDate(bill.trialEndDate)) >= 0 && daysBetween(todayLocal(), parseDate(bill.trialEndDate)) <= 14);
+  if (trial) plan.push({ title: `Handle ${trial.name} before trial/promo ends`, body: `Cancel-by or promo date is ${formatDate(parseDate(trial.trialEndDate || trial.contractEndDate))}. Save the cancel link and decide now.`, tone: 'danger' });
+  if (metrics.overBudgets.length) plan.push({ title: 'Fix over-budget categories', body: `${metrics.overBudgets.length} category budget(s) are over target. Start with the biggest recurring category.`, tone: 'warn' });
+  if (metrics.manualSoon) plan.push({ title: 'Protect manual payments', body: `${metrics.manualSoon} manual payment(s) are due within 14 days. Export iPhone reminders or switch to autopay if safe.`, tone: 'warn' });
+  if (!state.settings.appLockEnabled) plan.push({ title: 'Turn on app PIN', body: 'Enable the local app lock so your bills and transactions are hidden if someone opens this device.', tone: 'warn' });
+  if (!activeBills().some((bill) => bill.cancelUrl)) plan.push({ title: 'Add cancel/manage links', body: 'Save cancel links for subscriptions so cleanup is fast when you decide to cut costs.', tone: 'info' });
+  if (plan.length < 5) plan.push({ title: 'Run a monthly 10-minute money review', body: 'Open Command Center, handle the review queue, export a private backup, and check the 12-month projection.', tone: 'good' });
+  return plan.slice(0, 7);
+}
+
+function renderReviewQueue(metrics) {
+  const box = $('#reviewQueue');
+  if (!box) return;
+  const rows = [];
+  metrics.detected.slice(0, 5).forEach((item) => rows.push({ title: `Add or inspect ${item.name}`, body: `${money(item.amount)} ${item.frequencyLabel.toLowerCase()} pattern from ${item.count} transactions.`, tone: 'danger', action: 'Detected recurring' }));
+  detectPriceChanges().slice(0, 4).forEach((item) => rows.push({ title: `${item.name} changed price`, body: `New charge ${money(item.lastAmount)} vs prior typical ${money(item.previousMedian)}.`, tone: item.delta > 0 ? 'warn' : 'good', action: item.delta > 0 ? 'Negotiate/cancel' : 'Price dropped' }));
+  upcomingOccurrences(10).filter(({ bill }) => !bill.autopay).slice(0, 5).forEach(({ bill, days }) => rows.push({ title: `${bill.name} manual payment`, body: `Due ${days === 0 ? 'today' : `in ${days} days`} for ${money(bill.amount)}.`, tone: 'danger', action: 'Pay/remind' }));
+  metrics.duplicates.forEach((group) => rows.push({ title: `Possible duplicate: ${group.label}`, body: `${group.items.length} similar active items cost ${money(group.monthly)}/mo.`, tone: 'warn', action: 'Compare' }));
+  activeBills().filter((bill) => !bill.cancelUrl && bill.type === 'subscription').slice(0, 5).forEach((bill) => rows.push({ title: `Missing cancel link: ${bill.name}`, body: 'Add the manage/cancel URL so cleanup is faster later.', tone: 'info', action: 'Add link' }));
+  if (!rows.length) rows.push({ title: 'Review queue is clean', body: 'Import more transaction history or add cancel/trial dates for deeper monitoring.', tone: 'good', action: 'Nice' });
+  box.innerHTML = rows.slice(0, 12).map((item) => `
+    <article class="review-item ${escapeAttr(item.tone)}">
+      <div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.body)}</p></div>
+      <span>${escapeHtml(item.action)}</span>
+    </article>
+  `).join('');
+}
+
+function addAllDetectedBills() {
+  const detected = detectRecurringCharges();
+  if (!detected.length) return toast('No detected recurring charges to add yet. Import CSV first.');
+  let added = 0;
+  detected.forEach((item) => {
+    const exists = state.bills.some((bill) => normalizeMerchant(bill.name) === normalizeMerchant(item.name));
+    if (exists) return;
+    state.bills.push(normalizeBill({
+      name: item.name,
+      amount: item.amount,
+      frequency: item.frequency || 'monthly',
+      dueDate: item.lastDate || isoDate(todayLocal()),
+      category: guessCategoryFromName(item.name),
+      paymentMethod: 'Detected from CSV',
+      autopay: true,
+      type: 'subscription',
+      priority: 'useful',
+      notes: 'Auto-added from Command Center review queue. Confirm due date and category.'
+    }));
+    added += 1;
+  });
+  saveState();
+  render();
+  toast(added ? `Added ${added} detected item(s).` : 'Everything detected is already in bills.');
+}
+
+function renderNegotiator() {
+  const select = $('#negotiatorBillSelect');
+  const scriptBox = $('#negotiatorScript');
+  if (!select || !scriptBox) return;
+  const bills = activeBills().slice().sort((a, b) => monthlyCost(b) - monthlyCost(a));
+  const previous = select.value;
+  select.innerHTML = bills.length ? bills.map((bill) => `<option value="${escapeAttr(bill.id)}">${escapeHtml(bill.name)} - ${money(bill.amount)} / ${FREQ[bill.frequency]?.label || 'Monthly'}</option>`).join('') : '<option value="">Add a bill first</option>';
+  if (bills.some((bill) => bill.id === previous)) select.value = previous;
+  const selected = bills.find((bill) => bill.id === select.value) || bills[0];
+  scriptBox.textContent = selected ? buildNegotiationScript(selected, $('#negotiatorGoalSelect')?.value || 'discount') : 'Add a bill or subscription first, then this will generate a script.';
+}
+
+function buildNegotiationScript(bill, goal) {
+  const monthly = money(monthlyCost(bill));
+  const annual = money(annualCost(bill));
+  const category = bill.category || 'Other';
+  if (goal === 'cancel') {
+    return `Hi, I need help canceling or pausing my ${bill.name} plan.\n\nI am reviewing my monthly budget and this ${category.toLowerCase()} charge is currently about ${monthly}/month (${annual}/year). Please confirm the exact cancellation steps, the final billing date, and whether any refund or prorated credit applies.\n\nIf there is a lower-cost pause, downgrade, or retention offer, please show me that before canceling. Otherwise, please cancel and send written confirmation.`;
+  }
+  if (goal === 'fee') {
+    return `Hi, I am reviewing my ${bill.name} account and noticed a charge or fee around ${money(bill.amount)}.\n\nCan you review my account and credit or remove any avoidable fees? I have been trying to keep this bill predictable and would appreciate a one-time courtesy credit or a lower-fee plan. Please confirm the new monthly cost in writing.`;
+  }
+  if (goal === 'annual') {
+    return `Hi, I am reviewing my ${bill.name} plan. I currently pay about ${monthly}/month, or ${annual}/year.\n\nDo you offer a yearly, loyalty, student, bundle, or autopay discount? I am comparing this with alternatives and would stay if the price can be meaningfully reduced. Please send the best available offer and any contract terms before making changes.`;
+  }
+  return `Hi, I am reviewing my budget and ${bill.name} is one of my recurring charges at about ${monthly}/month (${annual}/year).\n\nBefore I cancel or switch providers, can you check for a loyalty discount, lower plan, promotional rate, autopay discount, or bundle that would reduce my monthly cost?\n\nMy goal is to keep the service only if the price is competitive. Please confirm the new price, how long it lasts, and whether there are any contract terms.`;
+}
+
+async function copyNegotiatorScript() {
+  const text = $('#negotiatorScript')?.textContent || '';
+  if (!text.trim()) return toast('No script to copy yet.');
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Negotiation script copied.');
+  } catch (error) {
+    toast('Could not copy script on this browser.');
+  }
+}
+
+async function copyOperatingPlan() {
+  const text = state.settings.lastCommandPlan || '';
+  if (!text.trim()) return toast('No plan to copy yet.');
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Operating plan copied.');
+  } catch (error) {
+    toast('Could not copy plan on this browser.');
+  }
+}
+
+function renderDueDateOptimizer(metrics) {
+  const box = $('#dueDateOptimizer');
+  if (!box) return;
+  const paydays = nextPaydays(90);
+  const score = (tone) => tone === 'danger' ? 0 : tone === 'warn' ? 1 : 2;
+  const rows = activeBills().map((bill) => {
+    const due = nextDueDate(bill);
+    const nearestBefore = paydays.filter((payday) => payday <= due).at(-1) || paydays[0];
+    const gap = nearestBefore ? daysBetween(nearestBefore, due) : 0;
+    let tone = 'good';
+    let suggestion = 'Timing looks okay.';
+    if (gap >= 10) { tone = 'warn'; suggestion = 'Ask provider to move due date closer to payday.'; }
+    if (gap < 0 || gap > 21) { tone = 'danger'; suggestion = 'This may hit before income lands. Consider moving it.'; }
+    if (!bill.autopay && daysBetween(todayLocal(), due) <= 7) { tone = 'danger'; suggestion = 'Manual bill is due soon. Add reminder or pay now.'; }
+    return { bill, due, nearestBefore, gap, tone, suggestion };
+  }).sort((a, b) => score(a.tone) - score(b.tone)).slice(0, 8);
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty-state">Add bills and payday settings to optimize timing.</div>';
+    return;
+  }
+  box.innerHTML = rows.map((row) => `
+    <article class="optimizer-card ${escapeAttr(row.tone)}">
+      <strong>${escapeHtml(row.bill.name)}</strong>
+      <p>${formatDate(row.due)} · ${row.nearestBefore ? `${Math.abs(row.gap)} day(s) after payday` : 'payday not set'}</p>
+      <small>${escapeHtml(row.suggestion)}</small>
+    </article>
+  `).join('');
+}
+
+function nextPaydays(days = 90) {
+  const result = [];
+  const start = todayLocal();
+  let d = parseDate(state.settings.paydayDate || isoDate(start));
+  const freq = state.settings.paydayFrequency || 'monthly';
+  let guard = 0;
+  while (d < start && guard < 80) {
+    if (freq === 'weekly') d.setDate(d.getDate() + 7);
+    else if (freq === 'biweekly') d.setDate(d.getDate() + 14);
+    else d.setMonth(d.getMonth() + 1);
+    guard += 1;
+  }
+  const end = new Date(start); end.setDate(end.getDate() + days);
+  while (d <= end && result.length < 40) {
+    result.push(new Date(d));
+    const next = new Date(d);
+    if (freq === 'weekly') next.setDate(next.getDate() + 7);
+    else if (freq === 'biweekly') next.setDate(next.getDate() + 14);
+    else next.setMonth(next.getMonth() + 1);
+    d = next;
+  }
+  return result;
+}
+
+function renderProjection() {
+  const chart = $('#projectionChart');
+  const list = $('#projectionList');
+  if (!chart || !list) return;
+  const months = buildTwelveMonthProjection();
+  const max = Math.max(1, ...months.map((m) => m.total));
+  chart.innerHTML = months.map((m) => `<div class="projection-month"><div class="projection-bar" style="height:${Math.max(8, Math.round((m.total / max) * 100))}%"></div><span>${escapeHtml(m.label)}</span></div>`).join('');
+  const heavy = months.slice().sort((a, b) => b.total - a.total).slice(0, 4);
+  list.innerHTML = heavy.map((m) => `
+    <div class="compact-item">
+      <div><strong>${escapeHtml(m.fullLabel)}</strong><p class="bill-meta">${m.items.length} scheduled charge(s)</p></div>
+      <strong>${money(m.total)}</strong>
+    </div>
+  `).join('');
+}
+
+function buildTwelveMonthProjection() {
+  const start = todayLocal();
+  const months = [];
+  for (let i = 0; i < 12; i += 1) {
+    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+    months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString(undefined, { month: 'short' }), fullLabel: d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }), total: 0, items: [] });
+  }
+  upcomingOccurrences(370).forEach((occurrence) => {
+    const key = `${occurrence.due.getFullYear()}-${occurrence.due.getMonth()}`;
+    const month = months.find((m) => m.key === key);
+    if (!month) return;
+    month.total += Number(occurrence.bill.amount || 0);
+    month.items.push(occurrence);
+  });
+  return months;
+}
+
+function renderRulesEngine(metrics) {
+  const box = $('#rulesEngine');
+  if (!box) return;
+  const subCount = activeBills().filter((bill) => bill.type === 'subscription').length;
+  const cancelCount = activeBills().filter((bill) => bill.cancelUrl).length;
+  const rules = [];
+  rules.push({ title: 'Local-only privacy', status: state.settings.localOnly ? 'Pass' : 'Review', body: state.settings.localOnly ? 'Bank buttons are hidden/disabled.' : 'Backend mode is visible. Use only with a private server.', tone: state.settings.localOnly ? 'good' : 'warn' });
+  rules.push({ title: 'Encrypted backup', status: 'Ready', body: 'Use Settings to export an encrypted private backup file with a password.', tone: 'good' });
+  rules.push({ title: 'Duplicate scan', status: metrics.duplicates.length ? 'Review' : 'Pass', body: metrics.duplicates.length ? `${metrics.duplicates.length} similar group(s) found.` : 'No obvious duplicate recurring items.', tone: metrics.duplicates.length ? 'warn' : 'good' });
+  rules.push({ title: 'Cancel-link coverage', status: `${cancelCount}/${subCount}`, body: 'Subscriptions with saved manage/cancel URLs.', tone: activeBills().some((bill) => bill.type === 'subscription' && !bill.cancelUrl) ? 'warn' : 'good' });
+  rules.push({ title: 'Manual payment risk', status: metrics.manualSoon ? 'Review' : 'Pass', body: metrics.manualSoon ? `${metrics.manualSoon} manual bill(s) due within 14 days.` : 'No urgent manual payments.', tone: metrics.manualSoon ? 'danger' : 'good' });
+  rules.push({ title: 'Budget pressure', status: metrics.overBudgets.length ? 'Review' : 'Pass', body: metrics.overBudgets.length ? `${metrics.overBudgets.length} categories over target.` : 'Recurring spend is inside category targets.', tone: metrics.overBudgets.length ? 'warn' : 'good' });
+  box.innerHTML = rules.map((rule) => `
+    <article class="rule-card ${escapeAttr(rule.tone)}">
+      <span>${escapeHtml(rule.status)}</span>
+      <strong>${escapeHtml(rule.title)}</strong>
+      <p>${escapeHtml(rule.body)}</p>
+    </article>
+  `).join('');
+}
+
+function findDuplicateBills() {
+  const groups = groupBy(activeBills(), (bill) => `${bill.category}:${bill.type}`);
+  const duplicates = [];
+  Object.entries(groups).forEach(([key, items]) => {
+    if (items.length < 2) return;
+    const similar = items.filter((bill, index) => items.some((other, j) => j !== index && (normalizeMerchant(other.name).includes(normalizeMerchant(bill.name)) || normalizeMerchant(bill.name).includes(normalizeMerchant(other.name)) || other.category === bill.category)));
+    if (similar.length >= 2) {
+      const label = key.split(':')[0];
+      duplicates.push({ label, items: similar, monthly: similar.reduce((sum, bill) => sum + monthlyCost(bill), 0) });
+    }
+  });
+  return duplicates.slice(0, 5);
+}
+
+function guessCategoryFromName(name) {
+  const value = String(name || '').toLowerCase();
+  if (/netflix|hulu|spotify|disney|max|peacock|paramount|youtube|stream|apple music/.test(value)) return 'Streaming';
+  if (/verizon|att|t-mobile|xfinity|internet|phone|mobile|comcast/.test(value)) return 'Phone/Internet';
+  if (/geico|progressive|insurance|allstate|state farm/.test(value)) return 'Insurance';
+  if (/rent|mortgage|apartment|landlord/.test(value)) return 'Housing';
+  if (/electric|water|gas|utility|power/.test(value)) return 'Utilities';
+  if (/adobe|microsoft|google|icloud|dropbox|software|app store/.test(value)) return 'Software';
+  if (/gym|fitness|health|medical/.test(value)) return 'Health';
+  if (/loan|credit|card|affirm|klarna/.test(value)) return 'Debt';
+  if (/uber|lyft|gas|parking|toll|auto/.test(value)) return 'Transportation';
+  return 'Other';
+}
+
+async function exportEncryptedBackup() {
+  const password = $('#vaultPasswordInput')?.value || '';
+  if (password.length < 8) return toast('Use an 8+ character backup password.');
+  try {
+    const payload = await encryptText(JSON.stringify(state), password);
+    downloadFile(`billpilot-private-vault-${isoDate(todayLocal())}.bpvault`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+    $('#vaultPasswordInput').value = '';
+    toast('Encrypted backup exported. Do not lose the password.');
+  } catch (error) {
+    console.error(error);
+    toast('Encrypted export failed on this browser.');
+  }
+}
+
+async function importEncryptedBackup(file) {
+  if (!file) return;
+  const password = $('#vaultPasswordInput')?.value || '';
+  if (!password) return toast('Enter the backup password first.');
+  try {
+    const payload = JSON.parse(await file.text());
+    const decrypted = await decryptText(payload, password);
+    state = normalizeState(JSON.parse(decrypted));
+    saveState();
+    $('#vaultPasswordInput').value = '';
+    render();
+    toast('Encrypted backup imported.');
+  } catch (error) {
+    console.error(error);
+    toast('Could not unlock backup. Check the password/file.');
+  }
+}
+
+async function deriveVaultKey(password, salt) {
+  if (!crypto?.subtle) throw new Error('Web Crypto unavailable');
+  const baseKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 200000, hash: 'SHA-256' }, baseKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+async function encryptText(text, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveVaultKey(password, salt);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
+  return { format: 'billpilot-vault-v1', kdf: 'PBKDF2-SHA256-200000', cipher: 'AES-GCM-256', salt: b64(salt), iv: b64(iv), data: b64(new Uint8Array(ciphertext)), createdAt: new Date().toISOString() };
+}
+
+async function decryptText(payload, password) {
+  if (payload?.format !== 'billpilot-vault-v1') throw new Error('Unknown vault format');
+  const salt = fromB64(payload.salt);
+  const iv = fromB64(payload.iv);
+  const data = fromB64(payload.data);
+  const key = await deriveVaultKey(password, salt);
+  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+  return new TextDecoder().decode(plaintext);
+}
+
+function b64(bytes) {
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+}
+
+function fromB64(value) {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
 function detectRecurringCharges() {
   const groups = groupBy(
     state.transactions.filter((txn) => Number.isFinite(txn.amount) && Math.abs(txn.amount) > 1),
@@ -1540,8 +1938,8 @@ function renderPersonalization() {
   const owner = state.settings.ownerName || 'Apollo';
   const label = state.settings.buildLabel || `${owner}'s personal build`;
   const appTitle = $('#appTitle');
-  if (appTitle) appTitle.textContent = `${owner}'s BillPilot IQ`;
-  document.title = `${owner}'s BillPilot IQ`;
+  if (appTitle) appTitle.textContent = `${owner}'s BillPilot IQ Ultra`;
+  document.title = `${owner}'s BillPilot IQ Ultra`;
   const pill = $('#privateBuildPill');
   if (pill) pill.textContent = state.settings.localOnly ? 'Private local-only build' : 'Bank backend mode';
   const welcome = $('#ownerWelcome');
@@ -1828,6 +2226,7 @@ function setupStaticControls() {
   $('#typeFilter').addEventListener('change', renderBills);
   $('#saveBudgetBtn').addEventListener('click', saveBudgets);
   $('#openAutopilotBtn').addEventListener('click', () => switchTab('autopilot'));
+  $('#openCommandBtn')?.addEventListener('click', () => switchTab('command'));
   $('#saveSmartProfileBtn').addEventListener('click', saveSmartProfile);
   $('#incomeInput').addEventListener('change', saveBudgets);
   $('#alertDaysInput').addEventListener('change', saveBudgets);
@@ -1853,6 +2252,13 @@ function setupStaticControls() {
   $('#removeDemoBtn')?.addEventListener('click', removeDemoStarterBills);
   $('#exportPrivateReportBtn')?.addEventListener('click', exportPrivateReport);
   $('#copyDataSummaryBtn')?.addEventListener('click', copyDataSummary);
+  $('#addAllDetectedBtn')?.addEventListener('click', addAllDetectedBills);
+  $('#copyNegotiatorBtn')?.addEventListener('click', copyNegotiatorScript);
+  $('#copyOperatingPlanBtn')?.addEventListener('click', copyOperatingPlan);
+  $('#negotiatorBillSelect')?.addEventListener('change', renderNegotiator);
+  $('#negotiatorGoalSelect')?.addEventListener('change', renderNegotiator);
+  $('#exportEncryptedBtn')?.addEventListener('click', exportEncryptedBackup);
+  $('#encryptedJsonInput')?.addEventListener('change', (event) => importEncryptedBackup(event.target.files[0]));
 
   if (!window.navigator.standalone && /iPhone|iPad|iPod/i.test(navigator.userAgent)) {
     $('#installTip').classList.remove('hidden');

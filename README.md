@@ -1,4 +1,4 @@
-# BillPilot IQ Advanced
+# BillPilot IQ Ultra - Apollo Private 10X Build Advanced
 
 BillPilot IQ Advanced is an iPhone-ready Progressive Web App for tracking subscriptions, bills, recurring payments, budgets, CSV/bank transactions, reminders, and savings opportunities.
 
@@ -190,3 +190,30 @@ This version is set up as a private local-only build by default:
 - Settings → Export private report creates a JSON report only when you choose to export it.
 
 Important: if you upload this package to a public GitHub repository, the app files and embedded screenshots are public. Your entered bills/transactions are still not uploaded to GitHub because they are stored locally in the browser.
+
+
+## 10X Ultra upgrade notes
+
+This version adds a new **Command Center** tab that turns the app into a private money operating system:
+
+- Money OS readiness score
+- Cash runway and 60-day pressure summary
+- One-tap operating plan
+- Smart review queue for hidden recurring charges, price changes, manual-payment risks, duplicate services, and missing cancel links
+- One-click add of detected recurring charges from imported CSV data
+- Bill negotiator scripts for discounts, cancellation, fee credits, and loyalty/annual deals
+- Due-date optimizer based on payday settings
+- 12-month projection chart for upcoming recurring commitments
+- Local rules engine
+- Encrypted backup export/import using a password and browser Web Crypto
+
+The app is still built for your personal-only use. Keep using manual entry and CSV import to stay free. Bank/Plaid tools remain hidden when local-only mode is on.
+
+### Best next steps after updating
+
+1. Open the app from your iPhone Home Screen.
+2. Go to **Settings** and set a PIN.
+3. Set income, payday, cash buffer, and savings goal.
+4. Import a bank/card CSV inside the app, not into GitHub.
+5. Open **Command Center** and follow the operating plan.
+6. Export an encrypted backup and store it somewhere private.

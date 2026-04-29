@@ -1,7 +1,7 @@
 {
-  "name": "Apollo BillPilot IQ",
-  "short_name": "BillPilot",
-  "description": "Apollo personal-only smart bill, subscription, and budget tracker for iPhone.",
+  "name": "Apollo BillPilot IQ Ultra",
+  "short_name": "BillPilot Ultra",
+  "description": "Apollo private iPhone money operating system for bills, subscriptions, budgets, forecasts, negotiation scripts, and encrypted backups.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
