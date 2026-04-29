@@ -28,6 +28,7 @@ let state = loadState();
 let activeTab = 'dashboard';
 let currentEditId = null;
 let toastTimer = null;
+let selectedWhatIf = new Set();
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -97,6 +98,12 @@ function normalizeState(input) {
       currency: input.settings?.currency || 'USD',
       alertDays: Number(input.settings?.alertDays ?? 3),
       budgets: { ...defaultBudgets, ...(input.settings?.budgets || {}) },
+      cashBuffer: Number(input.settings?.cashBuffer || 0),
+      monthlySavingsGoal: Number(input.settings?.monthlySavingsGoal || 0),
+      cushionFloor: Number(input.settings?.cushionFloor || 0),
+      paydayFrequency: ['weekly', 'biweekly', 'monthly'].includes(input.settings?.paydayFrequency) ? input.settings.paydayFrequency : 'monthly',
+      paydayDate: input.settings?.paydayDate || isoDate(todayLocal()),
+      autopilotMode: ['balanced', 'aggressive', 'gentle'].includes(input.settings?.autopilotMode) ? input.settings.autopilotMode : 'balanced',
       bankConnected: Boolean(input.settings?.bankConnected),
       lastNotificationDate: input.settings?.lastNotificationDate || null
     }
@@ -117,6 +124,9 @@ function normalizeBill(bill) {
     autopay: Boolean(bill.autopay),
     active: bill.active !== false,
     priority: bill.priority || 'useful',
+    trialEndDate: bill.trialEndDate || '',
+    contractEndDate: bill.contractEndDate || '',
+    cancelUrl: bill.cancelUrl || '',
     notes: bill.notes || '',
     lastPaid: bill.lastPaid || null,
     createdAt: bill.createdAt || new Date().toISOString(),
@@ -152,6 +162,12 @@ function seedState() {
       currency: 'USD',
       alertDays: 3,
       budgets: { ...defaultBudgets, Housing: 1600, Streaming: 60, Software: 80, Insurance: 180, Utilities: 250, 'Phone/Internet': 180, Transportation: 350, Food: 650 },
+      cashBuffer: 500,
+      monthlySavingsGoal: 250,
+      cushionFloor: 300,
+      paydayFrequency: 'biweekly',
+      paydayDate: isoDate(today),
+      autopilotMode: 'balanced',
       bankConnected: false
     }
   };
@@ -252,6 +268,8 @@ function render() {
   renderTransactions();
   renderDetectedCharges();
   renderInsights();
+  renderAutopilot();
+  renderBrainPreview();
   renderSettings();
   updateBankStatus();
 }
@@ -300,6 +318,14 @@ function renderBills() {
       : status === 'soon'
         ? `<span class="pill warn">Due in ${diff}d</span>`
         : `<span class="pill good">Due in ${diff}d</span>`;
+    const trialDays = bill.trialEndDate ? daysBetween(todayLocal(), parseDate(bill.trialEndDate)) : null;
+    const trialPill = trialDays !== null && trialDays >= 0
+      ? `<span class="pill ${trialDays <= 7 ? 'danger' : 'warn'}">Cancel-by in ${trialDays}d</span>`
+      : '';
+    const contractDays = bill.contractEndDate ? daysBetween(todayLocal(), parseDate(bill.contractEndDate)) : null;
+    const contractPill = contractDays !== null && contractDays >= 0 && contractDays <= 45
+      ? `<span class="pill warn">Promo ends in ${contractDays}d</span>`
+      : '';
     const inactive = bill.active ? '' : `<span class="pill">Paused</span>`;
     return `
       <article class="bill-row ${status === 'overdue' ? 'overdue' : ''}">
@@ -312,6 +338,8 @@ function renderBills() {
               ${statusPill}
               <span class="pill">${bill.autopay ? 'Autopay' : 'Manual pay'}</span>
               <span class="pill">${escapeHtml(bill.paymentMethod || 'No payment method')}</span>
+              ${trialPill}
+              ${contractPill}
               ${inactive}
             </div>
           </div>
@@ -449,9 +477,21 @@ function renderSettings() {
   const alertDays = $('#alertDaysInput');
   const currency = $('#currencyInput');
   const apiBase = $('#apiBaseInput');
+  const cashBuffer = $('#cashBufferInput');
+  const savingsGoal = $('#monthlySavingsGoalInput');
+  const cushionFloor = $('#cushionFloorInput');
+  const paydayFrequency = $('#paydayFrequencyInput');
+  const paydayDate = $('#paydayDateInput');
+  const autopilotMode = $('#autopilotModeInput');
   if (income) income.value = state.settings.income || '';
   if (alertDays) alertDays.value = state.settings.alertDays ?? 3;
   if (currency) currency.value = state.settings.currency || 'USD';
+  if (cashBuffer) cashBuffer.value = state.settings.cashBuffer || '';
+  if (savingsGoal) savingsGoal.value = state.settings.monthlySavingsGoal || '';
+  if (cushionFloor) cushionFloor.value = state.settings.cushionFloor || '';
+  if (paydayFrequency) paydayFrequency.value = state.settings.paydayFrequency || 'monthly';
+  if (paydayDate) paydayDate.value = state.settings.paydayDate || isoDate(todayLocal());
+  if (autopilotMode) autopilotMode.value = state.settings.autopilotMode || 'balanced';
   if (apiBase) apiBase.value = localStorage.getItem(API_BASE_KEY) || '';
 }
 
@@ -546,6 +586,447 @@ function buildInsights() {
   return { risk: Math.min(100, risk), items: items.slice(0, 8) };
 }
 
+function renderBrainPreview() {
+  const target = $('#brainPreview');
+  if (!target) return;
+  const health = calculateHealth();
+  const forecast = buildCashForecast(60);
+  const missions = buildMissions();
+  const anomalyCount = buildAnomalies().length;
+  const lowPoint = forecast.lowPoint;
+  target.innerHTML = [
+    { label: 'IQ health score', value: `${health.score}%`, sub: health.label },
+    { label: 'Projected low cash', value: money(lowPoint.balance), sub: lowPoint.date ? `around ${formatDate(parseDate(lowPoint.date))}` : 'add cash buffer' },
+    { label: 'Possible savings', value: money(missions.monthlyImpact), sub: 'monthly mission value' },
+    { label: 'Anomalies found', value: String(anomalyCount), sub: anomalyCount ? 'review in AI Coach' : 'nothing urgent' }
+  ].map((item) => `
+    <div class="brain-card">
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.value)}</strong>
+      <small>${escapeHtml(item.sub)}</small>
+    </div>
+  `).join('');
+}
+
+function renderAutopilot() {
+  if (!$('#autopilot')) return;
+  const health = calculateHealth();
+  const missions = buildMissions();
+  const forecast = buildCashForecast(60);
+  const anomalies = buildAnomalies();
+
+  if ($('#healthScoreBig')) $('#healthScoreBig').textContent = `${health.score}%`;
+  renderRadarGrid(health, forecast, missions, anomalies);
+  renderCashForecast(forecast);
+  renderMissions(missions);
+  renderWhatIfLab();
+  renderAnomalies(anomalies);
+}
+
+function renderRadarGrid(health, forecast, missions, anomalies) {
+  const target = $('#radarGrid');
+  if (!target) return;
+  const monthly = activeBills().reduce((sum, bill) => sum + monthlyCost(bill), 0);
+  const income = Number(state.settings.income || 0);
+  const subscriptions = activeBills().filter((bill) => bill.type === 'subscription');
+  const detected = detectRecurringCharges();
+  const spendPulse = spendPulseStats();
+  const manualSoon = upcomingOccurrences(state.settings.alertDays || 3).filter(({ bill }) => !bill.autopay).length;
+  const radar = [
+    { title: 'Income pressure', value: income ? `${Math.round((monthly / income) * 100)}%` : 'N/A', body: `${money(monthly)} committed monthly` },
+    { title: 'Subscription load', value: String(subscriptions.length), body: `${money(subscriptions.reduce((sum, bill) => sum + monthlyCost(bill), 0))}/mo in subscriptions` },
+    { title: 'Upcoming risk', value: String(manualSoon), body: 'manual payments due soon' },
+    { title: 'Lowest forecast point', value: money(forecast.lowPoint.balance), body: forecast.lowPoint.date ? formatDate(parseDate(forecast.lowPoint.date)) : 'set cash buffer' },
+    { title: 'CSV/bank intelligence', value: String(state.transactions.length), body: `${detected.length} recurring patterns detected` },
+    { title: 'Spend pulse', value: spendPulse.label, body: spendPulse.body },
+    { title: 'Mission value', value: money(missions.monthlyImpact), body: 'possible monthly improvement' },
+    { title: 'Scanner alerts', value: String(anomalies.length), body: health.label }
+  ];
+  target.innerHTML = radar.map((item) => `
+    <article class="radar-card">
+      <span>${escapeHtml(item.title)}</span>
+      <strong>${escapeHtml(item.value)}</strong>
+      <p>${escapeHtml(item.body)}</p>
+    </article>`).join('');
+}
+
+function calculateHealth() {
+  const bills = activeBills();
+  const monthly = bills.reduce((sum, bill) => sum + monthlyCost(bill), 0);
+  const income = Number(state.settings.income || 0);
+  const dueSoon = upcomingOccurrences(state.settings.alertDays || 3);
+  const budgetSpends = categoryMonthlySpend();
+  const detections = detectRecurringCharges();
+  const anomalies = buildAnomalies({ skipHealth: true });
+  let risk = 0;
+
+  if (!income) risk += 15;
+  if (income) {
+    const ratio = monthly / income;
+    if (ratio > 0.75) risk += 35;
+    else if (ratio > 0.55) risk += 22;
+    else if (ratio > 0.4) risk += 10;
+  }
+  risk += Math.min(18, dueSoon.filter(({ bill }) => !bill.autopay).length * 5);
+  risk += Math.min(18, detections.length * 4);
+  Object.entries(budgetSpends).forEach(([category, spend]) => {
+    const cap = Number(state.settings.budgets[category] || 0);
+    if (cap && spend > cap) risk += 5;
+  });
+  risk += Math.min(15, anomalies.length * 4);
+
+  const forecast = buildCashForecast(60);
+  if (state.settings.cushionFloor && forecast.lowPoint.balance < state.settings.cushionFloor) risk += 12;
+  if (state.settings.cashBuffer && forecast.lowPoint.balance < 0) risk += 18;
+
+  const score = clamp(Math.round(100 - risk), 0, 100);
+  const label = score >= 85 ? 'elite control' : score >= 70 ? 'healthy' : score >= 50 ? 'watch closely' : 'needs cleanup';
+  return { score, label, risk };
+}
+
+function buildCashForecast(days = 60) {
+  const start = todayLocal();
+  let balance = Number(state.settings.cashBuffer || 0);
+  const daily = [];
+  const eventsByDate = {};
+
+  upcomingOccurrences(days).forEach(({ bill, due }) => {
+    const key = isoDate(due);
+    eventsByDate[key] = eventsByDate[key] || { income: 0, bills: 0, names: [] };
+    eventsByDate[key].bills += Number(bill.amount || 0);
+    eventsByDate[key].names.push(bill.name);
+  });
+
+  nextPaydates(days).forEach((pay) => {
+    const key = isoDate(pay.date);
+    eventsByDate[key] = eventsByDate[key] || { income: 0, bills: 0, names: [] };
+    eventsByDate[key].income += pay.amount;
+    eventsByDate[key].names.push('Paycheck');
+  });
+
+  let lowPoint = { date: isoDate(start), balance };
+  for (let i = 0; i <= days; i += 1) {
+    const date = new Date(start);
+    date.setDate(start.getDate() + i);
+    const key = isoDate(date);
+    const event = eventsByDate[key] || { income: 0, bills: 0, names: [] };
+    balance += event.income;
+    balance -= event.bills;
+    const day = { date: key, balance, income: event.income, bills: event.bills, names: event.names };
+    daily.push(day);
+    if (balance < lowPoint.balance) lowPoint = { date: key, balance };
+  }
+
+  const weeks = [];
+  for (let i = 0; i < daily.length; i += 7) {
+    const slice = daily.slice(i, i + 7);
+    weeks.push({
+      start: slice[0].date,
+      end: slice[slice.length - 1].date,
+      bills: slice.reduce((sum, day) => sum + day.bills, 0),
+      income: slice.reduce((sum, day) => sum + day.income, 0),
+      ending: slice[slice.length - 1].balance,
+      names: slice.flatMap((day) => day.names).filter(Boolean).slice(0, 5)
+    });
+  }
+  return { daily, weeks, lowPoint };
+}
+
+function nextPaydates(days = 60) {
+  const income = Number(state.settings.income || 0);
+  if (!income) return [];
+  const start = todayLocal();
+  const end = new Date(start);
+  end.setDate(end.getDate() + days);
+  const frequency = state.settings.paydayFrequency || 'monthly';
+  const intervalDays = frequency === 'weekly' ? 7 : frequency === 'biweekly' ? 14 : null;
+  const amount = frequency === 'weekly' ? (income * 12) / 52 : frequency === 'biweekly' ? (income * 12) / 26 : income;
+  let payday = parseDate(state.settings.paydayDate || isoDate(start));
+  let guard = 0;
+
+  while (payday < start && guard < 200) {
+    if (intervalDays) payday.setDate(payday.getDate() + intervalDays);
+    else payday.setMonth(payday.getMonth() + 1);
+    guard += 1;
+  }
+
+  const pays = [];
+  guard = 0;
+  while (payday <= end && guard < 100) {
+    pays.push({ date: new Date(payday), amount });
+    if (intervalDays) payday.setDate(payday.getDate() + intervalDays);
+    else payday.setMonth(payday.getMonth() + 1);
+    guard += 1;
+  }
+  return pays;
+}
+
+function renderCashForecast(forecast) {
+  const chart = $('#cashflowChart');
+  const list = $('#cashflowList');
+  if (!chart || !list) return;
+  const values = forecast.weeks.map((week) => Math.abs(week.ending));
+  const max = Math.max(1, ...values);
+  chart.innerHTML = forecast.weeks.map((week) => {
+    const width = Math.max(8, Math.round((Math.abs(week.ending) / max) * 100));
+    const tone = week.ending < 0 ? 'danger' : week.ending < Number(state.settings.cushionFloor || 0) ? 'warn' : 'good';
+    return `
+      <div class="forecast-bar ${tone}">
+        <span>${escapeHtml(shortDateRange(week.start, week.end))}</span>
+        <div><i style="width:${width}%"></i></div>
+        <strong>${money(week.ending)}</strong>
+      </div>`;
+  }).join('');
+  list.innerHTML = forecast.weeks.slice(0, 6).map((week) => `
+    <div class="compact-item">
+      <div>
+        <strong>${escapeHtml(shortDateRange(week.start, week.end))}</strong>
+        <p class="bill-meta">Bills: ${money(week.bills)} · Income: ${money(week.income)} · ${escapeHtml(week.names.join(', ') || 'no scheduled events')}</p>
+      </div>
+      <strong>${money(week.ending)}</strong>
+    </div>`).join('');
+}
+
+function buildMissions() {
+  const missions = [];
+  const bills = activeBills();
+  const monthly = bills.reduce((sum, bill) => sum + monthlyCost(bill), 0);
+  const income = Number(state.settings.income || 0);
+  const mode = state.settings.autopilotMode || 'balanced';
+  const aggressiveness = mode === 'aggressive' ? 1.25 : mode === 'gentle' ? 0.75 : 1;
+
+  const nice = bills.filter((bill) => bill.priority === 'nice-to-have').sort((a, b) => monthlyCost(b) - monthlyCost(a));
+  if (nice.length) {
+    const top = nice.slice(0, mode === 'aggressive' ? 5 : 3);
+    const impact = top.reduce((sum, bill) => sum + monthlyCost(bill), 0);
+    missions.push(makeMission('Cancel or pause the low-value stack', `Start with ${top.map((bill) => bill.name).join(', ')}. They are marked nice-to-have and cost ${money(impact)} per month.`, impact, 92, 'Today'));
+  }
+
+  const negotiable = bills.filter((bill) => ['Utilities', 'Insurance', 'Phone/Internet', 'Transportation'].includes(bill.category) && monthlyCost(bill) >= 30).sort((a, b) => monthlyCost(b) - monthlyCost(a));
+  if (negotiable.length) {
+    const top = negotiable.slice(0, 3);
+    const impact = top.reduce((sum, bill) => sum + monthlyCost(bill) * 0.08 * aggressiveness, 0);
+    missions.push(makeMission('Bill negotiation sprint', `Call or chat with ${top.map((bill) => bill.name).join(', ')} and ask for loyalty, autopay, paperless, or competitor-match discounts.`, impact, 72, 'This week'));
+  }
+
+  const yearly = bills.filter((bill) => bill.type === 'subscription' && bill.frequency === 'monthly' && monthlyCost(bill) >= 8).slice(0, 4);
+  if (yearly.length) {
+    const impact = yearly.reduce((sum, bill) => sum + monthlyCost(bill) * 0.1, 0);
+    missions.push(makeMission('Annual billing arbitrage', `Check yearly plans for ${yearly.map((bill) => bill.name).join(', ')}. Only switch if you will keep them.`, impact, 64, 'This month'));
+  }
+
+  const detected = detectRecurringCharges();
+  if (detected.length) {
+    const impact = detected.slice(0, 3).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    missions.push(makeMission('Track hidden recurring charges', `${detected.slice(0, 3).map((item) => item.name).join(', ')} appear recurring but are not in your bill list. Add them or cancel them.`, impact, 88, 'Now'));
+  }
+
+  const manualSoon = upcomingOccurrences(10).filter(({ bill }) => !bill.autopay);
+  if (manualSoon.length) {
+    missions.push(makeMission('Missed-payment shield', `Add reminders or autopay for ${manualSoon.slice(0, 4).map(({ bill }) => bill.name).join(', ')}. This protects cash and late fees.`, Math.min(45, manualSoon.length * 12), 80, 'Before due'));
+  }
+
+  const goal = Number(state.settings.monthlySavingsGoal || 0);
+  if (goal && income && monthly + goal > income) {
+    missions.push(makeMission('Savings goal gap plan', `Your savings goal needs ${money(Math.max(0, monthly + goal - income))} more room. Use the What-if lab to build that gap.`, Math.max(0, monthly + goal - income), 76, 'This month'));
+  }
+
+  const sorted = missions.sort((a, b) => (b.impact * b.confidence) - (a.impact * a.confidence)).slice(0, 8);
+  return { items: sorted, monthlyImpact: sorted.reduce((sum, mission) => sum + mission.impact, 0) };
+}
+
+function makeMission(title, body, impact, confidence, urgency) {
+  return { title, body, impact: Math.max(0, impact), confidence, urgency };
+}
+
+function renderMissions(missions) {
+  const target = $('#missionList');
+  if (!target) return;
+  $('#missionValue').textContent = `${money(missions.monthlyImpact)}/mo`;
+  if (!missions.items.length) {
+    target.innerHTML = `<div class="empty-state">Add income, budgets, bills, or CSV transactions to unlock smart missions.</div>`;
+    return;
+  }
+  target.innerHTML = missions.items.map((mission) => `
+    <article class="mission-card">
+      <div>
+        <strong>${escapeHtml(mission.title)}</strong>
+        <p>${escapeHtml(mission.body)}</p>
+      </div>
+      <div class="mission-score">
+        <span>${money(mission.impact)}/mo</span>
+        <small>${mission.confidence}% confidence · ${escapeHtml(mission.urgency)}</small>
+      </div>
+    </article>`).join('');
+}
+
+function renderWhatIfLab() {
+  const list = $('#whatIfList');
+  if (!list) return;
+  const candidates = activeBills()
+    .filter((bill) => bill.priority !== 'essential' || bill.type === 'subscription')
+    .sort((a, b) => monthlyCost(b) - monthlyCost(a))
+    .slice(0, 14);
+  if (!candidates.length) {
+    list.innerHTML = `<div class="empty-state">Add some subscriptions or useful/nice-to-have bills to run a scenario.</div>`;
+    renderWhatIfSummary();
+    return;
+  }
+  list.innerHTML = candidates.map((bill) => `
+    <label class="whatif-item">
+      <input type="checkbox" class="whatif-check" value="${escapeAttr(bill.id)}" ${selectedWhatIf.has(bill.id) ? 'checked' : ''} />
+      <span>
+        <strong>${escapeHtml(bill.name)}</strong>
+        <small>${escapeHtml(bill.category)} · ${money(monthlyCost(bill))}/mo · ${escapeHtml(bill.priority)}</small>
+      </span>
+    </label>`).join('');
+  $$('.whatif-check').forEach((box) => box.addEventListener('change', () => {
+    if (box.checked) selectedWhatIf.add(box.value);
+    else selectedWhatIf.delete(box.value);
+    renderWhatIfSummary();
+  }));
+  renderWhatIfSummary();
+}
+
+function renderWhatIfSummary() {
+  const target = $('#whatIfSummary');
+  if (!target) return;
+  const selectedBills = activeBills().filter((bill) => selectedWhatIf.has(bill.id));
+  const monthlySavings = selectedBills.reduce((sum, bill) => sum + monthlyCost(bill), 0);
+  const income = Number(state.settings.income || 0);
+  const monthly = activeBills().reduce((sum, bill) => sum + monthlyCost(bill), 0);
+  const goal = Number(state.settings.monthlySavingsGoal || 0);
+  const after = income - monthly + monthlySavings;
+  const goalProgress = goal ? Math.min(100, Math.round((monthlySavings / goal) * 100)) : 0;
+  target.innerHTML = `
+    <h3>Scenario result</h3>
+    <div class="scenario-number">${money(monthlySavings)}/mo</div>
+    <p>Extra room created by your selected changes.</p>
+    <div class="mini-stat"><span>Left after bills</span><strong>${money(after)}</strong></div>
+    <div class="mini-stat"><span>Annual impact</span><strong>${money(monthlySavings * 12)}</strong></div>
+    <div class="mini-stat"><span>Savings goal progress</span><strong>${goal ? `${goalProgress}%` : 'Set goal'}</strong></div>
+    <button class="secondary-btn" id="clearScenarioBtn">Clear scenario</button>`;
+  const clear = $('#clearScenarioBtn');
+  if (clear) clear.addEventListener('click', () => { selectedWhatIf = new Set(); renderWhatIfLab(); });
+}
+
+function buildAnomalies(options = {}) {
+  const anomalies = [];
+  const changes = detectPriceChanges();
+  changes.slice(0, 6).forEach((change) => {
+    anomalies.push({
+      title: `${change.name} price changed`,
+      body: `Last charge was ${money(change.lastAmount)}, previous typical charge was ${money(change.previousMedian)}. Difference: ${money(change.delta)}.`,
+      tone: change.delta > 0 ? 'warn' : 'good'
+    });
+  });
+
+  const detected = detectRecurringCharges();
+  detected.slice(0, 4).forEach((item) => anomalies.push({
+    title: `Untracked recurring charge: ${item.name}`,
+    body: `${money(item.amount)} ${item.frequencyLabel.toLowerCase()} pattern from ${item.count} transactions. Add it to bills or cancel it.`,
+    tone: 'warn'
+  }));
+
+  const categories = groupBy(activeBills().filter((bill) => bill.type === 'subscription'), (bill) => bill.category);
+  Object.entries(categories).forEach(([category, bills]) => {
+    if (bills.length >= 3 && ['Streaming', 'Software', 'Food', 'Health'].includes(category)) {
+      anomalies.push({
+        title: `${category} subscription pile-up`,
+        body: `${bills.length} active ${category.toLowerCase()} subscriptions cost ${money(bills.reduce((sum, bill) => sum + monthlyCost(bill), 0))}/mo. Rotate, bundle, or cancel overlap.`,
+        tone: 'warn'
+      });
+    }
+  });
+
+  const trials = activeBills().filter((bill) => bill.trialEndDate && daysBetween(todayLocal(), parseDate(bill.trialEndDate)) <= 14 && daysBetween(todayLocal(), parseDate(bill.trialEndDate)) >= 0);
+  trials.forEach((bill) => anomalies.push({
+    title: `${bill.name} trial/cancel date is close`,
+    body: `${formatDate(parseDate(bill.trialEndDate))} is the cancel-by date. ${bill.cancelUrl ? 'Cancel/manage link is saved.' : 'Add the cancel link so it is ready.'}`,
+    tone: 'danger'
+  }));
+
+  const manualSoon = upcomingOccurrences(state.settings.alertDays || 3).filter(({ bill }) => !bill.autopay);
+  manualSoon.forEach(({ bill, days }) => anomalies.push({
+    title: `${bill.name} needs manual payment`,
+    body: `Due ${days === 0 ? 'today' : `in ${days} days`}. Export iPhone reminders or mark paid when complete.`,
+    tone: 'danger'
+  }));
+
+  if (!options.skipHealth && !anomalies.length) anomalies.push({ title: 'No major anomalies found', body: 'Import more transaction history for sharper scanning.', tone: 'good' });
+  return anomalies.slice(0, 12);
+}
+
+function renderAnomalies(anomalies) {
+  const target = $('#anomalyList');
+  if (!target) return;
+  target.innerHTML = anomalies.map((item) => `
+    <div class="insight anomaly ${escapeAttr(item.tone)}">
+      <strong>${escapeHtml(item.title)}</strong>
+      <p>${escapeHtml(item.body)}</p>
+    </div>`).join('');
+}
+
+function detectPriceChanges() {
+  const groups = groupBy(
+    state.transactions.filter((txn) => Number.isFinite(txn.amount) && Math.abs(txn.amount) > 1),
+    (txn) => normalizeMerchant(txn.name)
+  );
+  const changes = [];
+  Object.entries(groups).forEach(([merchant, txns]) => {
+    const sorted = txns.slice().sort((a, b) => parseDate(a.date) - parseDate(b.date));
+    if (sorted.length < 3) return;
+    const last = sorted[sorted.length - 1];
+    const previous = sorted.slice(0, -1).map((txn) => Math.abs(Number(txn.amount))).filter(Boolean);
+    const previousMedian = median(previous);
+    const lastAmount = Math.abs(Number(last.amount));
+    if (!previousMedian || !lastAmount) return;
+    const delta = lastAmount - previousMedian;
+    const pct = Math.abs(delta) / previousMedian;
+    if (Math.abs(delta) >= 2 && pct >= 0.08) {
+      changes.push({ name: titleCase(merchant), lastAmount, previousMedian, delta, pct, lastDate: last.date });
+    }
+  });
+  return changes.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+}
+
+function spendPulseStats() {
+  const now = todayLocal();
+  const last30 = new Date(now); last30.setDate(now.getDate() - 30);
+  const prior60 = new Date(now); prior60.setDate(now.getDate() - 60);
+  const expenses = state.transactions.filter((txn) => Math.abs(Number(txn.amount || 0)) > 0);
+  const last = expenses.filter((txn) => parseDate(txn.date) >= last30).reduce((sum, txn) => sum + Math.abs(Number(txn.amount)), 0);
+  const prior = expenses.filter((txn) => parseDate(txn.date) >= prior60 && parseDate(txn.date) < last30).reduce((sum, txn) => sum + Math.abs(Number(txn.amount)), 0);
+  if (!expenses.length) return { label: 'No data', body: 'import CSV for pulse' };
+  if (!prior) return { label: money(last), body: 'spent in last 30 days' };
+  const delta = last - prior;
+  const pct = Math.round((delta / prior) * 100);
+  return { label: pct > 0 ? `+${pct}%` : `${pct}%`, body: `${money(Math.abs(delta))} ${delta >= 0 ? 'higher' : 'lower'} than prior 30 days` };
+}
+
+function saveSmartProfile() {
+  state.settings.cashBuffer = Number($('#cashBufferInput')?.value || 0);
+  state.settings.monthlySavingsGoal = Number($('#monthlySavingsGoalInput')?.value || 0);
+  state.settings.cushionFloor = Number($('#cushionFloorInput')?.value || 0);
+  state.settings.paydayFrequency = $('#paydayFrequencyInput')?.value || 'monthly';
+  state.settings.paydayDate = $('#paydayDateInput')?.value || isoDate(todayLocal());
+  state.settings.autopilotMode = $('#autopilotModeInput')?.value || 'balanced';
+  saveState();
+  render();
+  toast('Smart profile saved.');
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function shortDateRange(start, end) {
+  const a = parseDate(start);
+  const b = parseDate(end);
+  return `${a.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}-${b.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
+
 function detectRecurringCharges() {
   const groups = groupBy(
     state.transactions.filter((txn) => Number.isFinite(txn.amount) && Math.abs(txn.amount) > 1),
@@ -638,6 +1119,9 @@ function openBillDialog(billId = null) {
   $('#billCategory').value = bill?.category || 'Other';
   $('#billPayment').value = bill?.paymentMethod || '';
   $('#billPriority').value = bill?.priority || 'useful';
+  $('#trialEndDate').value = bill?.trialEndDate || '';
+  $('#contractEndDate').value = bill?.contractEndDate || '';
+  $('#cancelUrl').value = bill?.cancelUrl || '';
   $('#billAutopay').checked = Boolean(bill?.autopay);
   $('#billActive').checked = bill?.active !== false;
   $('#billNotes').value = bill?.notes || '';
@@ -664,6 +1148,9 @@ function saveBillFromForm(event) {
     category: $('#billCategory').value,
     paymentMethod: $('#billPayment').value.trim(),
     priority: $('#billPriority').value,
+    trialEndDate: $('#trialEndDate').value,
+    contractEndDate: $('#contractEndDate').value,
+    cancelUrl: $('#cancelUrl').value.trim(),
     autopay: $('#billAutopay').checked,
     active: $('#billActive').checked,
     notes: $('#billNotes').value.trim(),
@@ -1036,6 +1523,8 @@ function setupStaticControls() {
   $('#categoryFilter').addEventListener('change', renderBills);
   $('#typeFilter').addEventListener('change', renderBills);
   $('#saveBudgetBtn').addEventListener('click', saveBudgets);
+  $('#openAutopilotBtn').addEventListener('click', () => switchTab('autopilot'));
+  $('#saveSmartProfileBtn').addEventListener('click', saveSmartProfile);
   $('#incomeInput').addEventListener('change', saveBudgets);
   $('#alertDaysInput').addEventListener('change', saveBudgets);
   $('#currencyInput').addEventListener('change', saveBudgets);

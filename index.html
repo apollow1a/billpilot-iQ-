@@ -34,6 +34,7 @@
       <button class="tab" data-tab="bills">Bills</button>
       <button class="tab" data-tab="budget">Budget</button>
       <button class="tab" data-tab="calendar">Due</button>
+      <button class="tab" data-tab="autopilot">AI Coach</button>
       <button class="tab" data-tab="transactions">Bank</button>
       <button class="tab" data-tab="settings">Settings</button>
     </nav>
@@ -85,6 +86,17 @@
             <span id="savingsScore" class="score-pill">0</span>
           </div>
           <div id="insights" class="insight-list"></div>
+        </section>
+
+        <section class="card premium-card">
+          <div class="section-header">
+            <div>
+              <h2>Autopilot brain</h2>
+              <p>Financial health, cash-pressure forecast, and the highest-impact moves right now.</p>
+            </div>
+            <button class="secondary-btn" id="openAutopilotBtn">Open AI Coach</button>
+          </div>
+          <div id="brainPreview" class="brain-grid"></div>
         </section>
 
         <section class="card">
@@ -167,6 +179,75 @@
         </section>
       </section>
 
+      <section id="autopilot" class="screen">
+        <section class="card autopilot-hero">
+          <div>
+            <p class="eyebrow">One-of-a-kind money assistant</p>
+            <h2>BillPilot IQ Autopilot</h2>
+            <p>Smart rules, future bill pressure, subscription risk, CSV/bank transaction intelligence, savings missions, and a what-if lab built directly into your iPhone app.</p>
+          </div>
+          <div class="health-orb">
+            <span id="healthScoreBig">0</span>
+            <small>health score</small>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Money radar</h2>
+              <p>BillPilot combines your bills, due dates, categories, budgets, and transactions into one command center.</p>
+            </div>
+          </div>
+          <div id="radarGrid" class="radar-grid"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>60-day cash pressure forecast</h2>
+              <p>Shows when upcoming bills may hit hardest based on due dates, income, and your cash buffer.</p>
+            </div>
+          </div>
+          <div id="cashflowChart" class="cashflow-chart"></div>
+          <div id="cashflowList" class="compact-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Smart savings missions</h2>
+              <p>Ranked by estimated impact, urgency, and confidence. These are local recommendations from the app, not financial advice.</p>
+            </div>
+            <span id="missionValue" class="score-pill">$0/mo</span>
+          </div>
+          <div id="missionList" class="mission-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>What-if lab</h2>
+              <p>Select bills/subscriptions to pause, cancel, negotiate, or move to yearly billing and instantly see the effect.</p>
+            </div>
+          </div>
+          <div class="whatif-layout">
+            <div id="whatIfList" class="whatif-list"></div>
+            <aside id="whatIfSummary" class="whatif-summary"></aside>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Anomaly scanner</h2>
+              <p>Looks for price increases, duplicate services, risky manual payments, and charges found in transactions but missing from bills.</p>
+            </div>
+          </div>
+          <div id="anomalyList" class="insight-list"></div>
+        </section>
+      </section>
+
       <section id="transactions" class="screen">
         <section class="card">
           <div class="section-header">
@@ -215,6 +296,44 @@
             <button id="enableNotifyBtn" class="secondary-btn">Enable in-app alerts</button>
           </div>
         </section>
+        <section class="card premium-card">
+          <div class="section-header">
+            <div>
+              <h2>Smart profile</h2>
+              <p>These settings make the AI Coach smarter without needing a paid bank connection.</p>
+            </div>
+            <button id="saveSmartProfileBtn" class="secondary-btn">Save smart profile</button>
+          </div>
+          <div class="form-grid">
+            <label>Cash buffer today
+              <input id="cashBufferInput" inputmode="decimal" type="number" min="0" step="0.01" placeholder="500" />
+            </label>
+            <label>Monthly savings goal
+              <input id="monthlySavingsGoalInput" inputmode="decimal" type="number" min="0" step="0.01" placeholder="250" />
+            </label>
+            <label>Minimum comfort cushion
+              <input id="cushionFloorInput" inputmode="decimal" type="number" min="0" step="0.01" placeholder="300" />
+            </label>
+            <label>Pay frequency
+              <select id="paydayFrequencyInput">
+                <option value="monthly">Monthly</option>
+                <option value="biweekly">Biweekly</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </label>
+            <label>Next payday
+              <input id="paydayDateInput" type="date" />
+            </label>
+            <label>Autopilot style
+              <select id="autopilotModeInput">
+                <option value="balanced">Balanced</option>
+                <option value="aggressive">Aggressive saver</option>
+                <option value="gentle">Gentle reminders</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
         <section class="card">
           <h2>Bank API settings</h2>
           <p>Use the same origin by default, or set your backend URL if the server runs elsewhere.</p>
@@ -284,6 +403,15 @@
             <option value="useful">Useful</option>
             <option value="nice-to-have">Nice-to-have</option>
           </select>
+        </label>
+        <label>Trial ends / cancel-by date
+          <input id="trialEndDate" type="date" />
+        </label>
+        <label>Contract or promo ends
+          <input id="contractEndDate" type="date" />
+        </label>
+        <label>Cancel / manage URL
+          <input id="cancelUrl" type="url" placeholder="https://..." />
         </label>
       </div>
       <div class="check-row">

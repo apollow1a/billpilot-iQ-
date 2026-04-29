@@ -1,5 +1,5 @@
 date,description,amount,category,account
-2026-04-26,NETFLIX.COM,15.49,Streaming,Apple Card
+2026-04-26,NETFLIX.COM,17.99,Streaming,Apple Card
 2026-03-27,NETFLIX.COM,15.49,Streaming,Apple Card
 2026-02-25,NETFLIX.COM,15.49,Streaming,Apple Card
 2026-04-24,SPOTIFY USA,11.99,Streaming,Chase Visa
@@ -8,3 +8,9 @@ date,description,amount,category,account
 2026-04-21,VERIZON WIRELESS,82.10,Phone/Internet,Checking
 2026-03-22,VERIZON WIRELESS,82.10,Phone/Internet,Checking
 2026-02-20,VERIZON WIRELESS,82.10,Phone/Internet,Checking
+2026-04-19,ADOBE CREATIVE CLOUD,59.99,Software,Chase Visa
+2026-03-19,ADOBE CREATIVE CLOUD,59.99,Software,Chase Visa
+2026-02-19,ADOBE CREATIVE CLOUD,59.99,Software,Chase Visa
+2026-04-15,GYM MEMBERSHIP,29.99,Health,Debit Card
+2026-03-15,GYM MEMBERSHIP,29.99,Health,Debit Card
+2026-02-15,GYM MEMBERSHIP,29.99,Health,Debit Card
