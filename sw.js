@@ -1,4 +1,4 @@
-const CACHE_NAME = 'billpilot-iq-ultra-10x-v4';
+const CACHE_NAME = 'billpilot-iq-accuracy-100x-v5';
 const APP_SHELL = [
   './',
   './index.html',

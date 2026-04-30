@@ -1,7 +1,7 @@
 {
-  "name": "Apollo BillPilot IQ Ultra",
-  "short_name": "BillPilot Ultra",
-  "description": "Apollo private iPhone money operating system for bills, subscriptions, budgets, forecasts, negotiation scripts, and encrypted backups.",
+  "name": "Apollo BillPilot IQ 100X Accuracy",
+  "short_name": "BillPilot 100X",
+  "description": "Apollo private iPhone money operating system with bills, budgets, forecasts, negotiation scripts, encrypted backups, and accuracy auditing.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

@@ -1,6 +1,7 @@
 const STORAGE_KEY = 'billpilot-iq:v1';
 const API_BASE_KEY = 'billpilot-iq:api-base';
 const PERSONAL_REPORT_NAME = 'billpilot-apollo-private-report.json';
+const ACCURACY_REPORT_NAME = 'billpilot-accuracy-audit.json';
 const DEMO_SIGNATURE = ['Rent:1450', 'Netflix:15.49', 'Car insurance:118', 'iCloud storage:2.99'];
 let appUnlocked = false;
 
@@ -118,7 +119,11 @@ function normalizeState(input) {
       lockWhenHidden: input.settings?.lockWhenHidden !== false,
       firstRunAt: input.settings?.firstRunAt || new Date().toISOString(),
       dataMode: input.settings?.dataMode || 'personal-only',
-      lastCommandPlan: input.settings?.lastCommandPlan || ''
+      lastCommandPlan: input.settings?.lastCommandPlan || '',
+      lastAccuracyAuditAt: input.settings?.lastAccuracyAuditAt || '',
+      lastImportStats: input.settings?.lastImportStats || null,
+      strictAccuracyMode: input.settings?.strictAccuracyMode !== false,
+      amountTolerancePct: Number(input.settings?.amountTolerancePct || 10)
     }
   };
 }
@@ -141,6 +146,11 @@ function normalizeBill(bill) {
     contractEndDate: bill.contractEndDate || '',
     cancelUrl: bill.cancelUrl || '',
     notes: bill.notes || '',
+    amountStatus: ['verified', 'estimate', 'variable', 'needs-review'].includes(bill.amountStatus) ? bill.amountStatus : (bill.verifiedAt ? 'verified' : 'needs-review'),
+    verifiedAt: bill.verifiedAt || '',
+    source: bill.source || 'manual',
+    lastTransactionMatchAt: bill.lastTransactionMatchAt || '',
+    lastAccuracyNote: bill.lastAccuracyNote || '',
     lastPaid: bill.lastPaid || null,
     createdAt: bill.createdAt || new Date().toISOString(),
     updatedAt: bill.updatedAt || new Date().toISOString()
@@ -186,7 +196,11 @@ function seedState() {
       lockWhenHidden: true,
       firstRunAt: new Date().toISOString(),
       dataMode: 'personal-only',
-      lastCommandPlan: ''
+      lastCommandPlan: '',
+      lastAccuracyAuditAt: '',
+      lastImportStats: null,
+      strictAccuracyMode: true,
+      amountTolerancePct: 10
     }
   };
 }
@@ -347,6 +361,9 @@ function renderBills() {
       ? `<span class="pill warn">Promo ends in ${contractDays}d</span>`
       : '';
     const inactive = bill.active ? '' : `<span class="pill">Paused</span>`;
+    const confidence = billAccuracyCheck(bill);
+    const confidenceTone = confidence.score >= 80 ? 'good' : confidence.score >= 60 ? 'warn' : 'danger';
+    const confidencePill = `<span class="pill ${confidenceTone}">${confidence.score}% verified</span>`;
     return `
       <article class="bill-row ${status === 'overdue' ? 'overdue' : ''}">
         <div class="bill-main">
@@ -361,6 +378,7 @@ function renderBills() {
               ${trialPill}
               ${contractPill}
               ${inactive}
+              ${confidencePill}
             </div>
           </div>
         </div>
@@ -474,9 +492,9 @@ function renderDetectedCharges() {
   target.innerHTML = detections.map((detection) => `
     <div class="insight">
       <strong>${escapeHtml(detection.name)} · ${money(detection.amount)}</strong>
-      <p>${detection.frequencyLabel} pattern from ${detection.count} transactions. Last seen ${formatDate(parseDate(detection.lastDate))}.</p>
+      <p>${detection.frequencyLabel} pattern from ${detection.count} transactions. Last seen ${formatDate(parseDate(detection.lastDate))}. ${detection.confidence ? `${detection.confidence}% confidence.` : ''}</p>
       <div class="action-row">
-        <button class="secondary-btn add-detected-btn" data-name="${escapeAttr(detection.name)}" data-amount="${detection.amount}" data-frequency="${detection.frequency}">Add to bills</button>
+        <button class="secondary-btn add-detected-btn" data-name="${escapeAttr(detection.name)}" data-amount="${detection.amount}" data-frequency="${detection.frequency}" data-confidence="${detection.confidence || 0}" data-last-date="${escapeAttr(detection.lastDate || '')}" data-next-date="${escapeAttr(detection.predictedNextDate || '')}">Add to bills</button>
       </div>
     </div>`).join('');
   $$('.add-detected-btn').forEach((button) => button.addEventListener('click', () => addDetectedBill(button.dataset)));
@@ -512,6 +530,10 @@ function renderSettings() {
   if (paydayFrequency) paydayFrequency.value = state.settings.paydayFrequency || 'monthly';
   if (paydayDate) paydayDate.value = state.settings.paydayDate || isoDate(todayLocal());
   if (autopilotMode) autopilotMode.value = state.settings.autopilotMode || 'balanced';
+  const strict = $('#strictAccuracyInput');
+  const tolerance = $('#amountToleranceInput');
+  if (strict) strict.value = state.settings.strictAccuracyMode === false ? 'off' : 'on';
+  if (tolerance) tolerance.value = String(state.settings.amountTolerancePct || 10);
   if (apiBase) apiBase.value = localStorage.getItem(API_BASE_KEY) || '';
 }
 
@@ -1031,6 +1053,8 @@ function saveSmartProfile() {
   state.settings.paydayFrequency = $('#paydayFrequencyInput')?.value || 'monthly';
   state.settings.paydayDate = $('#paydayDateInput')?.value || isoDate(todayLocal());
   state.settings.autopilotMode = $('#autopilotModeInput')?.value || 'balanced';
+  state.settings.strictAccuracyMode = ($('#strictAccuracyInput')?.value || 'on') === 'on';
+  state.settings.amountTolerancePct = Number($('#amountToleranceInput')?.value || 10);
   saveState();
   render();
   toast('Smart profile saved.');
@@ -1175,13 +1199,16 @@ function addAllDetectedBills() {
       name: item.name,
       amount: item.amount,
       frequency: item.frequency || 'monthly',
-      dueDate: item.lastDate || isoDate(todayLocal()),
+      dueDate: item.predictedNextDate || item.lastDate || isoDate(todayLocal()),
       category: guessCategoryFromName(item.name),
       paymentMethod: 'Detected from CSV',
       autopay: true,
       type: 'subscription',
       priority: 'useful',
-      notes: 'Auto-added from Command Center review queue. Confirm due date and category.'
+      amountStatus: 'estimate',
+      source: 'detected',
+      lastTransactionMatchAt: item.lastDate || '',
+      notes: `Auto-added from Command Center review queue with ${item.confidence || 'estimated'}% confidence. Confirm due date, category, and exact amount.`
     }));
     added += 1;
   });
@@ -1443,6 +1470,10 @@ function fromB64(value) {
 }
 
 function detectRecurringCharges() {
+  return recurringEngine({ includeKnown: false }).slice(0, 12);
+}
+
+function recurringEngine(options = {}) {
   const groups = groupBy(
     state.transactions.filter((txn) => Number.isFinite(txn.amount) && Math.abs(txn.amount) > 1),
     (txn) => normalizeMerchant(txn.name)
@@ -1452,23 +1483,30 @@ function detectRecurringCharges() {
   const detections = [];
 
   Object.entries(groups).forEach(([merchant, txns]) => {
-    const sorted = txns.sort((a, b) => parseDate(a.date) - parseDate(b.date));
+    const sorted = txns.slice().sort((a, b) => parseDate(a.date) - parseDate(b.date));
     if (sorted.length < 2) return;
-    if (billNames.some((name) => merchant.includes(name) || name.includes(merchant))) return;
+    const merchantMatch = billNames.some((name) => merchant.includes(name) || name.includes(merchant));
+    if (!options.includeKnown && merchantMatch) return;
 
-    const amounts = sorted.map((txn) => Math.abs(Number(txn.amount))).filter(Boolean);
+    const amounts = sorted.map((txn) => Math.abs(Number(txn.amount))).filter((amount) => amount > 0);
     const medianAmount = median(amounts);
     if (!medianAmount || medianAmount < 2) return;
     const amountVariance = amounts.reduce((max, amount) => Math.max(max, Math.abs(amount - medianAmount) / medianAmount), 0);
-    if (amountVariance > 0.28) return;
+    if (amountVariance > 0.42 && !options.includeVariable) return;
 
     const gaps = [];
-    for (let i = 1; i < sorted.length; i += 1) {
-      gaps.push(Math.abs(daysBetween(parseDate(sorted[i - 1].date), parseDate(sorted[i].date))));
-    }
+    for (let i = 1; i < sorted.length; i += 1) gaps.push(Math.abs(daysBetween(parseDate(sorted[i - 1].date), parseDate(sorted[i].date))));
     const gap = median(gaps);
     const freq = guessFrequency(gap);
     if (!freq) return;
+
+    const lastDate = sorted[sorted.length - 1].date;
+    const predictedNextDate = isoDate(advanceDate(parseDate(lastDate), { frequency: freq.key, customDays: Math.round(gap) || 30 }));
+    const cadenceVariance = gaps.length > 1 ? gaps.reduce((max, item) => Math.max(max, Math.abs(item - gap)), 0) : 0;
+    const recencyDays = Math.abs(daysBetween(parseDate(lastDate), todayLocal()));
+    const confidence = clamp(Math.round(
+      35 + Math.min(30, sorted.length * 8) + Math.max(0, 20 - amountVariance * 40) + Math.max(0, 15 - cadenceVariance) + Math.max(0, 10 - recencyDays / 12)
+    ), 30, 99);
 
     detections.push({
       name: titleCase(merchant),
@@ -1476,11 +1514,16 @@ function detectRecurringCharges() {
       frequency: freq.key,
       frequencyLabel: freq.label,
       count: sorted.length,
-      lastDate: sorted[sorted.length - 1].date
+      lastDate,
+      predictedNextDate,
+      amountVariance,
+      cadenceGap: gap,
+      confidence,
+      knownBillMatch: merchantMatch
     });
   });
 
-  return detections.sort((a, b) => b.amount - a.amount).slice(0, 12);
+  return detections.sort((a, b) => (b.confidence * b.amount) - (a.confidence * a.amount));
 }
 
 function guessFrequency(gap) {
@@ -1508,11 +1551,15 @@ function addDetectedBill(dataset) {
     name: dataset.name,
     amount: Number(dataset.amount || 0),
     frequency: dataset.frequency || 'monthly',
-    dueDate: isoDate(todayLocal()),
+    dueDate: dataset.nextDate || isoDate(todayLocal()),
     category: 'Other',
     paymentMethod: 'Detected from bank/card',
     autopay: true,
-    type: 'subscription'
+    type: 'subscription',
+    source: 'detected',
+    amountStatus: 'estimate',
+    lastTransactionMatchAt: dataset.lastDate || '',
+    notes: `Detected with ${dataset.confidence || 'estimated'}% confidence from imported transactions. Confirm due date and exact amount.`
   });
   state.bills.push(newBill);
   saveState();
@@ -1534,6 +1581,10 @@ function openBillDialog(billId = null) {
   $('#billCategory').value = bill?.category || 'Other';
   $('#billPayment').value = bill?.paymentMethod || '';
   $('#billPriority').value = bill?.priority || 'useful';
+  const amountStatus = $('#billAmountStatus');
+  if (amountStatus) amountStatus.value = bill?.amountStatus || (bill?.verifiedAt ? 'verified' : 'needs-review');
+  const verifiedAt = $('#billVerifiedAt');
+  if (verifiedAt) verifiedAt.value = bill?.verifiedAt || '';
   $('#trialEndDate').value = bill?.trialEndDate || '';
   $('#contractEndDate').value = bill?.contractEndDate || '';
   $('#cancelUrl').value = bill?.cancelUrl || '';
@@ -1563,6 +1614,9 @@ function saveBillFromForm(event) {
     category: $('#billCategory').value,
     paymentMethod: $('#billPayment').value.trim(),
     priority: $('#billPriority').value,
+    amountStatus: $('#billAmountStatus')?.value || 'needs-review',
+    verifiedAt: $('#billVerifiedAt')?.value || '',
+    source: state.bills.find((bill) => bill.id === $('#billId').value)?.source || 'manual',
     trialEndDate: $('#trialEndDate').value,
     contractEndDate: $('#contractEndDate').value,
     cancelUrl: $('#cancelUrl').value.trim(),
@@ -1659,41 +1713,83 @@ async function importCsv(file) {
     toast('CSV appears empty.');
     return;
   }
-  const headers = rows[0].map((header) => header.toLowerCase().replace(/[^a-z0-9]+/g, ''));
-  const findIndex = (names) => headers.findIndex((header) => names.some((name) => header.includes(name)));
-  const dateIndex = findIndex(['date', 'posted', 'transactiondate']);
-  const nameIndex = findIndex(['name', 'description', 'merchant', 'payee']);
-  const amountIndex = findIndex(['amount', 'debit', 'charge']);
-  const categoryIndex = findIndex(['category']);
-  const accountIndex = findIndex(['account', 'card']);
+  const importBatch = id('import');
+  const headerRow = rows[0] || [];
+  const headers = headerRow.map((header) => String(header || '').toLowerCase().replace(/[^a-z0-9]+/g, ''));
+  const columns = chooseCsvColumns(headers);
 
-  if (dateIndex < 0 || nameIndex < 0 || amountIndex < 0) {
-    toast('CSV needs date, name/description, and amount columns.');
+  if (columns.dateIndex < 0 || columns.nameIndex < 0 || (columns.amountIndex < 0 && columns.debitIndex < 0 && columns.creditIndex < 0)) {
+    state.settings.lastImportStats = {
+      importedAt: new Date().toISOString(),
+      fileName: file.name || 'CSV import',
+      rows: Math.max(0, rows.length - 1),
+      added: 0,
+      duplicates: 0,
+      skipped: Math.max(0, rows.length - 1),
+      status: 'failed',
+      reason: 'Missing date, name/description, and amount/debit/credit columns.',
+      headers: headerRow
+    };
+    saveState();
+    render();
+    toast('CSV needs date, name/description, and amount/debit/credit columns.');
     return;
   }
 
   const added = [];
-  rows.slice(1).forEach((cells) => {
-    const rawDate = cells[dateIndex];
+  const skippedRows = [];
+  rows.slice(1).forEach((cells, index) => {
+    const rawDate = cells[columns.dateIndex];
     const parsedDate = parseLooseDate(rawDate);
-    if (!parsedDate) return;
-    const amount = Number(String(cells[amountIndex] || '').replace(/[$,()]/g, '').replace(/^\s*$/, '0'));
-    if (!Number.isFinite(amount)) return;
+    if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+      skippedRows.push({ row: index + 2, reason: 'Bad date', value: rawDate || '' });
+      return;
+    }
+
+    const amountInfo = parseCsvAmount(cells, columns);
+    if (!Number.isFinite(amountInfo.amount) || amountInfo.amount === 0) {
+      skippedRows.push({ row: index + 2, reason: 'Bad amount', value: cells[columns.amountIndex] || cells[columns.debitIndex] || cells[columns.creditIndex] || '' });
+      return;
+    }
+
     added.push(normalizeTransaction({
       id: id('csv'),
       date: isoDate(parsedDate),
-      name: cells[nameIndex] || 'Imported transaction',
-      amount,
-      category: cells[categoryIndex] || 'Other',
-      account: cells[accountIndex] || 'CSV import',
-      source: 'csv'
+      name: cells[columns.nameIndex] || 'Imported transaction',
+      amount: amountInfo.amount,
+      category: columns.categoryIndex >= 0 ? (cells[columns.categoryIndex] || 'Other') : 'Other',
+      account: columns.accountIndex >= 0 ? (cells[columns.accountIndex] || 'CSV import') : 'CSV import',
+      source: 'csv',
+      importBatch,
+      signConvention: amountInfo.signConvention,
+      raw: Object.fromEntries(headerRow.map((header, i) => [header || 'column_' + (i + 1), cells[i] || '']))
     }));
   });
 
-  mergeTransactions(added);
+  const merge = mergeTransactions(added);
+  state.settings.lastImportStats = {
+    importedAt: new Date().toISOString(),
+    fileName: file.name || 'CSV import',
+    rows: Math.max(0, rows.length - 1),
+    parsed: added.length,
+    added: merge.added,
+    duplicates: merge.duplicates,
+    skipped: skippedRows.length,
+    status: merge.added ? 'ok' : (added.length ? 'duplicates-only' : 'empty'),
+    columns: {
+      date: headerRow[columns.dateIndex] || '',
+      name: headerRow[columns.nameIndex] || '',
+      amount: headerRow[columns.amountIndex] || '',
+      debit: headerRow[columns.debitIndex] || '',
+      credit: headerRow[columns.creditIndex] || '',
+      category: headerRow[columns.categoryIndex] || '',
+      account: headerRow[columns.accountIndex] || ''
+    },
+    skippedRows: skippedRows.slice(0, 8)
+  };
   saveState();
   render();
-  toast(`Imported ${added.length} transactions.`);
+  toast(`Imported ${merge.added} new transaction(s). ${merge.duplicates} duplicate(s) ignored.`);
 }
 
 function parseLooseDate(value) {
@@ -1713,13 +1809,55 @@ function parseLooseDate(value) {
 
 function mergeTransactions(incoming) {
   const seen = new Set(state.transactions.map((txn) => `${txn.date}|${normalizeMerchant(txn.name)}|${Math.round(Math.abs(txn.amount) * 100)}`));
+  const stats = { added: 0, duplicates: 0 };
   incoming.forEach((txn) => {
     const key = `${txn.date}|${normalizeMerchant(txn.name)}|${Math.round(Math.abs(txn.amount) * 100)}`;
     if (!seen.has(key)) {
       state.transactions.push(txn);
       seen.add(key);
+      stats.added += 1;
+    } else {
+      stats.duplicates += 1;
     }
   });
+  return stats;
+}
+
+function chooseCsvColumns(headers) {
+  const findExact = (names) => headers.findIndex((header) => names.includes(header));
+  const findLoose = (names) => headers.findIndex((header) => names.some((name) => header.includes(name)));
+  const amountExact = findExact(['amount', 'transactionamount', 'transactionamt']);
+  return {
+    dateIndex: findLoose(['date', 'posted', 'transactiondate', 'postingdate', 'transdate']),
+    nameIndex: findLoose(['name', 'description', 'merchant', 'payee', 'memo']),
+    amountIndex: amountExact >= 0 ? amountExact : findLoose(['amount', 'charge', 'transactionamt']),
+    debitIndex: findLoose(['debit', 'withdrawal', 'spent', 'charge']),
+    creditIndex: findLoose(['credit', 'deposit', 'payment', 'refund']),
+    categoryIndex: findLoose(['category', 'type']),
+    accountIndex: findLoose(['account', 'card'])
+  };
+}
+
+function parseCsvAmount(cells, columns) {
+  const debit = columns.debitIndex >= 0 ? parseMoneyValue(cells[columns.debitIndex]) : null;
+  const credit = columns.creditIndex >= 0 ? parseMoneyValue(cells[columns.creditIndex]) : null;
+  if (debit !== null && Math.abs(debit) > 0) return { amount: Math.abs(debit), signConvention: 'debit-column-expense-positive' };
+  if (credit !== null && Math.abs(credit) > 0) return { amount: -Math.abs(credit), signConvention: 'credit-column-income-negative' };
+  const amount = columns.amountIndex >= 0 ? parseMoneyValue(cells[columns.amountIndex]) : null;
+  return { amount: amount ?? 0, signConvention: 'single-amount-column' };
+}
+
+function parseMoneyValue(value) {
+  if (value === undefined || value === null) return null;
+  let text = String(value).trim();
+  if (!text) return null;
+  const isParenNegative = /^\(.*\)$/.test(text);
+  text = text.replace(/[,$]/g, '').replace(/[()]/g, '').replace(/[^0-9.+-]/g, '');
+  if (!text || text === '-' || text === '+') return null;
+  let amount = Number(text);
+  if (!Number.isFinite(amount)) return null;
+  if (isParenNegative) amount = -Math.abs(amount);
+  return amount;
 }
 
 async function connectBank() {
@@ -2206,6 +2344,266 @@ function setupLocking() {
   showLockScreen();
 }
 
+function renderAccuracyCenter() {
+  const panel = $('#accuracy');
+  if (!panel) return;
+  const audit = buildAccuracyAudit();
+  const scoreBig = $('#accuracyScoreBig');
+  if (scoreBig) scoreBig.textContent = `${audit.score}%`;
+  renderAccuracyMetrics(audit);
+  renderTrustLedger(audit);
+  renderReconciliationQueue(audit);
+  renderCsvDiagnostics(audit);
+  renderAssumptionLog(audit);
+  const summary = $('#accuracySummary');
+  if (summary) {
+    const last = state.settings.lastAccuracyAuditAt ? formatDate(parseDate(state.settings.lastAccuracyAuditAt.slice(0, 10))) : 'not run yet';
+    summary.textContent = `Data confidence ${audit.score}%. ${audit.needsReview} item(s) need review. Last audit: ${last}. ${audit.summary}`;
+  }
+}
+
+function buildAccuracyAudit() {
+  const bills = activeBills();
+  const billChecks = bills.map((bill) => billAccuracyCheck(bill));
+  const monthlyTotal = bills.reduce((sum, bill) => sum + monthlyCost(bill), 0);
+  const weightedTotal = billChecks.reduce((sum, check) => sum + (check.monthly * check.score), 0);
+  const weightedBase = billChecks.reduce((sum, check) => sum + check.monthly, 0);
+  const score = billChecks.length ? Math.round(weightedTotal / Math.max(1, weightedBase)) : 0;
+  const detections = detectRecurringCharges();
+  const priceChanges = detectPriceChanges();
+  const duplicates = findDuplicateBills();
+  const amountMismatches = billChecks.filter((check) => check.flags.some((flag) => flag.type === 'amount-mismatch'));
+  const stale = billChecks.filter((check) => check.flags.some((flag) => flag.type === 'stale-review'));
+  const needsReview = billChecks.filter((check) => check.score < 75 || check.flags.some((flag) => ['amount-mismatch', 'missing-amount-proof', 'date-risk'].includes(flag.type))).length + detections.length + priceChanges.length;
+  const verifiedMonthly = billChecks.filter((check) => check.score >= 80).reduce((sum, check) => sum + check.monthly, 0);
+  const unverifiedMonthly = Math.max(0, monthlyTotal - verifiedMonthly);
+  const assumptions = buildAssumptions(billChecks, detections);
+  const summary = bills.length ? `${money(verifiedMonthly)}/mo is high-confidence and ${money(unverifiedMonthly)}/mo needs review.` : 'Add your first bills to start building accuracy.';
+  return { bills, billChecks, score, monthlyTotal, verifiedMonthly, unverifiedMonthly, detections, priceChanges, duplicates, amountMismatches, stale, needsReview, assumptions, summary };
+}
+
+function billAccuracyCheck(bill) {
+  let score = 25;
+  const flags = [];
+  const matches = findLikelyTransactionsForBill(bill);
+  const recentMatch = matches[0] || null;
+  const tolerance = Math.max(1, Number(state.settings.amountTolerancePct || 10)) / 100;
+
+  if (Number(bill.amount) > 0) score += 12; else flags.push({ type: 'missing-amount', text: 'Missing amount.' });
+  if (bill.dueDate) score += 10; else flags.push({ type: 'missing-due-date', text: 'Missing due date.' });
+  if (FREQ[bill.frequency]) score += 8;
+  if (bill.category && bill.category !== 'Other') score += 6;
+  if (bill.paymentMethod) score += 6; else flags.push({ type: 'missing-payment', text: 'Payment method not set.' });
+  if (bill.autopay || bill.lastPaid) score += 6;
+  if (bill.cancelUrl || bill.type === 'bill') score += 4;
+
+  const verifiedDays = bill.verifiedAt ? daysBetween(parseDate(bill.verifiedAt), todayLocal()) : null;
+  if (bill.amountStatus === 'verified') score += 12;
+  if (bill.amountStatus === 'estimate') flags.push({ type: 'missing-amount-proof', text: 'Amount is marked estimated.' });
+  if (bill.amountStatus === 'variable') score += 4;
+  if (bill.amountStatus === 'needs-review') flags.push({ type: 'missing-amount-proof', text: 'Amount needs review.' });
+  if (verifiedDays !== null && verifiedDays <= 90) score += 12;
+  if ((verifiedDays === null || verifiedDays > 120) && state.settings.strictAccuracyMode) flags.push({ type: 'stale-review', text: 'Not verified in the last 120 days.' });
+
+  if (recentMatch) {
+    const matchedAmount = Math.abs(Number(recentMatch.amount || 0));
+    const diffPct = Number(bill.amount) ? Math.abs(matchedAmount - Number(bill.amount)) / Number(bill.amount) : 0;
+    score += 14;
+    if (diffPct <= tolerance) score += 10;
+    if (diffPct > tolerance) flags.push({ type: 'amount-mismatch', text: `Imported transaction ${money(matchedAmount)} differs from bill amount ${money(bill.amount)}.` });
+  } else if (state.transactions.length >= 5 && bill.autopay) {
+    flags.push({ type: 'missing-transaction-match', text: 'Autopay bill has no matching imported transaction yet.' });
+  }
+
+  const next = nextDueDate(bill);
+  const days = daysBetween(todayLocal(), next);
+  if (!bill.autopay && days <= Number(state.settings.alertDays || 3)) flags.push({ type: 'date-risk', text: `Manual payment due in ${days} day(s).` });
+  if (bill.source === 'detected') flags.push({ type: 'detected-estimate', text: 'Auto-added from transaction detection; confirm due date.' });
+
+  const confidenceLabel = score >= 88 ? 'Very high' : score >= 75 ? 'Good' : score >= 55 ? 'Needs review' : 'Low';
+  return { bill, score: clamp(score, 0, 100), confidenceLabel, flags, matches, recentMatch, monthly: monthlyCost(bill), nextDue: next };
+}
+
+function findLikelyTransactionsForBill(bill) {
+  const billName = normalizeMerchant(bill.name);
+  const amount = Math.abs(Number(bill.amount || 0));
+  const tolerance = Math.max(0.02, Number(state.settings.amountTolerancePct || 10) / 100);
+  return state.transactions
+    .filter((txn) => {
+      const merchant = normalizeMerchant(txn.name);
+      const merchantMatch = merchant.includes(billName) || billName.includes(merchant) || tokenOverlap(merchant, billName) >= 0.5;
+      const txnAmount = Math.abs(Number(txn.amount || 0));
+      const amountMatch = amount ? Math.abs(txnAmount - amount) / amount <= Math.max(0.05, tolerance) : true;
+      return merchantMatch && amountMatch;
+    })
+    .sort((a, b) => parseDate(b.date) - parseDate(a.date));
+}
+
+function tokenOverlap(a, b) {
+  const left = new Set(String(a || '').split(/\s+/).filter((token) => token.length > 2));
+  const right = new Set(String(b || '').split(/\s+/).filter((token) => token.length > 2));
+  if (!left.size || !right.size) return 0;
+  let hits = 0;
+  left.forEach((token) => { if (right.has(token)) hits += 1; });
+  return hits / Math.min(left.size, right.size);
+}
+
+function renderAccuracyMetrics(audit) {
+  const box = $('#accuracyMetrics');
+  if (!box) return;
+  const lastImport = state.settings.lastImportStats;
+  const cards = [
+    { label: 'Data confidence', value: `${audit.score}%`, body: audit.score >= 80 ? 'forecast is ready' : 'review before relying', tone: audit.score >= 80 ? 'good' : audit.score >= 60 ? 'warn' : 'danger' },
+    { label: 'Verified monthly', value: money(audit.verifiedMonthly), body: 'high-confidence recurring cost', tone: 'good' },
+    { label: 'Needs review', value: money(audit.unverifiedMonthly), body: `${audit.needsReview} issue(s) in queue`, tone: audit.needsReview ? 'warn' : 'good' },
+    { label: 'Last CSV import', value: lastImport ? `${lastImport.added || 0} added` : 'None', body: lastImport ? `${lastImport.duplicates || 0} duplicate(s), ${lastImport.skipped || 0} skipped` : 'import bank/card CSV', tone: lastImport?.status === 'failed' ? 'danger' : lastImport ? 'good' : 'warn' }
+  ];
+  box.innerHTML = cards.map((card) => `
+    <article class="accuracy-metric ${escapeAttr(card.tone)}">
+      <span>${escapeHtml(card.label)}</span>
+      <strong>${escapeHtml(card.value)}</strong>
+      <small>${escapeHtml(card.body)}</small>
+    </article>
+  `).join('');
+}
+
+function renderTrustLedger(audit) {
+  const box = $('#trustLedger');
+  if (!box) return;
+  if (!audit.billChecks.length) {
+    box.innerHTML = '<div class="empty-state">Add bills to build your trust ledger.</div>';
+    return;
+  }
+  box.innerHTML = audit.billChecks
+    .slice()
+    .sort((a, b) => a.score - b.score || monthlyCost(b.bill) - monthlyCost(a.bill))
+    .map((check) => {
+      const tone = check.score >= 80 ? 'good' : check.score >= 60 ? 'warn' : 'danger';
+      const matchLine = check.recentMatch ? `Matched ${money(Math.abs(check.recentMatch.amount))} on ${formatDate(parseDate(check.recentMatch.date))}` : 'No transaction proof yet';
+      const flags = check.flags.length ? check.flags.slice(0, 2).map((flag) => flag.text).join(' ') : 'No major flags.';
+      return `
+        <article class="ledger-row ${escapeAttr(tone)}">
+          <div>
+            <strong>${escapeHtml(check.bill.name)}</strong>
+            <p class="bill-meta">${escapeHtml(check.bill.category)} · ${FREQ[check.bill.frequency]?.label || 'Monthly'} · ${money(check.monthly)}/mo avg</p>
+            <small>${escapeHtml(matchLine)} · ${escapeHtml(flags)}</small>
+          </div>
+          <div class="ledger-score"><span>${check.score}%</span><small>${escapeHtml(check.confidenceLabel)}</small></div>
+        </article>`;
+    }).join('');
+}
+
+function renderReconciliationQueue(audit) {
+  const box = $('#reconciliationQueue');
+  if (!box) return;
+  const queue = [];
+  audit.detections.slice(0, 6).forEach((item) => queue.push({ tone: 'warn', title: `Missing recurring item: ${item.name}`, body: `${money(item.amount)} ${item.frequencyLabel.toLowerCase()} pattern, ${item.confidence}% confidence. Add it or mark it not a bill.` }));
+  audit.amountMismatches.slice(0, 6).forEach((check) => queue.push({ tone: 'danger', title: `Amount mismatch: ${check.bill.name}`, body: check.flags.find((flag) => flag.type === 'amount-mismatch')?.text || 'Imported transaction disagrees with saved amount.' }));
+  audit.priceChanges.slice(0, 5).forEach((change) => queue.push({ tone: change.delta > 0 ? 'warn' : 'good', title: `Price changed: ${change.name}`, body: `Typical ${money(change.previousMedian)}, latest ${money(change.lastAmount)}. Difference ${money(change.delta)}.` }));
+  audit.stale.slice(0, 6).forEach((check) => queue.push({ tone: 'warn', title: `Review stale bill: ${check.bill.name}`, body: 'Verify the amount, due date, payment method, and cancel/manage URL.' }));
+  audit.duplicates.forEach((dup) => queue.push({ tone: 'warn', title: `Possible duplicate group: ${dup.label}`, body: `${dup.items.map((bill) => bill.name).join(', ')} total ${money(dup.monthly)}/mo.` }));
+  if (!queue.length) {
+    box.innerHTML = '<div class="insight good"><strong>Accuracy queue clear.</strong><p>No major reconciliation issues found. Import more CSV history to keep this sharp.</p></div>';
+    return;
+  }
+  box.innerHTML = queue.slice(0, 14).map((item) => `<div class="insight anomaly ${escapeAttr(item.tone)}"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.body)}</p></div>`).join('');
+}
+
+function renderCsvDiagnostics() {
+  const box = $('#csvDiagnostics');
+  if (!box) return;
+  const stats = state.settings.lastImportStats;
+  if (!stats) {
+    box.innerHTML = '<div class="empty-state">No CSV imported yet. Import 2-3 months of bank/card transactions for the best recurring charge detection.</div>';
+    return;
+  }
+  const items = [
+    { label: 'File', value: stats.fileName || 'CSV import', body: stats.importedAt ? new Date(stats.importedAt).toLocaleString() : '' },
+    { label: 'Rows parsed', value: String(stats.parsed ?? stats.rows ?? 0), body: `${stats.added || 0} added, ${stats.duplicates || 0} duplicate(s)` },
+    { label: 'Skipped', value: String(stats.skipped || 0), body: stats.reason || (stats.skippedRows?.length ? stats.skippedRows.map((row) => `row ${row.row}: ${row.reason}`).join('; ') : 'none') },
+    { label: 'Columns', value: stats.columns ? 'Mapped' : 'Unknown', body: stats.columns ? `Date: ${stats.columns.date || '-'} · Name: ${stats.columns.name || '-'} · Amount: ${stats.columns.amount || stats.columns.debit || stats.columns.credit || '-'}` : 'No mapping saved' }
+  ];
+  box.innerHTML = items.map((item) => `
+    <article class="diagnostic-card">
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.value)}</strong>
+      <small>${escapeHtml(item.body)}</small>
+    </article>
+  `).join('');
+}
+
+function buildAssumptions(checks, detections) {
+  const assumptions = [];
+  checks.forEach((check) => {
+    if (check.bill.amountStatus !== 'verified') assumptions.push({ title: `${check.bill.name} amount is not verified`, body: `Status: ${check.bill.amountStatus}. Update it after checking the provider or statement.` });
+    if (!check.bill.verifiedAt) assumptions.push({ title: `${check.bill.name} has no verified date`, body: 'Set Last verified date after you confirm amount and due date.' });
+    if (!check.recentMatch && state.transactions.length) assumptions.push({ title: `${check.bill.name} has no transaction match`, body: 'This may be fine for cash/manual payments, but imported bank/card proof was not found.' });
+  });
+  detections.forEach((item) => assumptions.push({ title: `${item.name} may be recurring`, body: `${item.confidence}% confidence based on imported transactions, but it is not added as a bill yet.` }));
+  if (!state.settings.income) assumptions.push({ title: 'Income is missing', body: 'Left-after-bills, runway, and budget pressure are less accurate until monthly income is set.' });
+  if (!state.settings.cashBuffer) assumptions.push({ title: 'Cash buffer is missing', body: 'Cash pressure forecast needs current cash buffer for accurate low-balance estimates.' });
+  return assumptions.slice(0, 20);
+}
+
+function renderAssumptionLog(audit) {
+  const box = $('#assumptionLog');
+  if (!box) return;
+  if (!audit.assumptions.length) {
+    box.innerHTML = '<div class="insight good"><strong>No major assumptions.</strong><p>Your current setup has enough proof for a high-confidence forecast.</p></div>';
+    return;
+  }
+  box.innerHTML = audit.assumptions.map((item) => `<div class="insight"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.body)}</p></div>`).join('');
+}
+
+function runAccuracyAudit() {
+  state.settings.lastAccuracyAuditAt = new Date().toISOString();
+  saveState();
+  renderAccuracyCenter();
+  toast('Accuracy audit complete. Review the Accuracy tab.');
+}
+
+function exportAccuracyReport() {
+  const audit = buildAccuracyAudit();
+  const payload = {
+    app: 'BillPilot IQ Ultra Accuracy Build',
+    owner: state.settings.ownerName || 'Apollo',
+    exportedAt: new Date().toISOString(),
+    score: audit.score,
+    summary: audit.summary,
+    settings: {
+      strictAccuracyMode: state.settings.strictAccuracyMode,
+      amountTolerancePct: state.settings.amountTolerancePct,
+      localOnly: state.settings.localOnly
+    },
+    bills: audit.billChecks.map((check) => ({
+      name: check.bill.name,
+      amount: check.bill.amount,
+      monthlyAverage: Number(check.monthly.toFixed(2)),
+      frequency: check.bill.frequency,
+      nextDue: isoDate(check.nextDue),
+      confidence: check.score,
+      flags: check.flags.map((flag) => flag.text),
+      matchedTransaction: check.recentMatch ? { date: check.recentMatch.date, name: check.recentMatch.name, amount: check.recentMatch.amount } : null
+    })),
+    detectedRecurring: audit.detections,
+    priceChanges: audit.priceChanges,
+    lastImportStats: state.settings.lastImportStats,
+    assumptions: audit.assumptions
+  };
+  downloadFile(ACCURACY_REPORT_NAME, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+  toast('Accuracy report exported.');
+}
+
+function markReviewedToday() {
+  const today = isoDate(todayLocal());
+  state.bills = state.bills.map((bill) => ({ ...bill, verifiedAt: today, amountStatus: bill.amountStatus === 'variable' ? 'variable' : 'verified', updatedAt: new Date().toISOString() }));
+  state.settings.lastAccuracyAuditAt = new Date().toISOString();
+  saveState();
+  render();
+  toast('All active bills marked reviewed today.');
+}
+
+
 function setupStaticControls() {
   CATEGORIES.forEach((category) => {
     const option = new Option(category, category);
@@ -2259,6 +2657,9 @@ function setupStaticControls() {
   $('#negotiatorGoalSelect')?.addEventListener('change', renderNegotiator);
   $('#exportEncryptedBtn')?.addEventListener('click', exportEncryptedBackup);
   $('#encryptedJsonInput')?.addEventListener('change', (event) => importEncryptedBackup(event.target.files[0]));
+  $('#runAccuracyAuditBtn')?.addEventListener('click', runAccuracyAudit);
+  $('#exportAccuracyReportBtn')?.addEventListener('click', exportAccuracyReport);
+  $('#markReviewedBtn')?.addEventListener('click', markReviewedToday);
 
   if (!window.navigator.standalone && /iPhone|iPad|iPod/i.test(navigator.userAgent)) {
     $('#installTip').classList.remove('hidden');

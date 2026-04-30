@@ -36,6 +36,7 @@
       <button class="tab" data-tab="calendar">Due</button>
       <button class="tab" data-tab="autopilot">AI Coach</button>
       <button class="tab" data-tab="command">Command</button>
+      <button class="tab" data-tab="accuracy">Accuracy</button>
       <button class="tab" data-tab="transactions">Bank</button>
       <button class="tab" data-tab="settings">Settings</button>
     </nav>
@@ -265,8 +266,8 @@
         <section class="card command-hero-card">
           <div>
             <p class="eyebrow">Apollo private money OS</p>
-            <h2>Command Center 10X</h2>
-            <p>This layer turns the app into a personal finance cockpit: review queue, bill intelligence, cash runway, negotiation scripts, encrypted backups, due-date optimizer, and 12-month projection.</p>
+            <h2>Command Center 100X Accuracy</h2>
+            <p>This layer turns the app into a personal finance cockpit with accuracy scoring, review queues, bill intelligence, cash runway, negotiation scripts, encrypted backups, due-date optimizer, and 12-month projection.</p>
           </div>
           <div class="command-badge"><span id="commandScoreBig">0</span><small>readiness</small></div>
         </section>
@@ -351,6 +352,75 @@
         </section>
       </section>
 
+
+
+      <section id="accuracy" class="screen">
+        <section class="card accuracy-hero-card">
+          <div>
+            <p class="eyebrow">Accuracy-first money OS</p>
+            <h2>Accuracy Center</h2>
+            <p>Every number gets checked. BillPilot grades confidence, flags assumptions, compares bills to transactions, finds missing recurring charges, and creates a clean review queue before you rely on the forecast.</p>
+          </div>
+          <div class="accuracy-score"><span id="accuracyScoreBig">0%</span><small>data confidence</small></div>
+        </section>
+
+        <section id="accuracyMetrics" class="accuracy-metrics-grid"></section>
+
+        <section class="card accuracy-panel">
+          <div class="section-header">
+            <div>
+              <h2>Accuracy actions</h2>
+              <p>Use these after adding bills or importing bank/card CSV files. The audit never sends data anywhere.</p>
+            </div>
+          </div>
+          <div class="action-row">
+            <button id="runAccuracyAuditBtn" class="primary-btn">Run accuracy audit</button>
+            <button id="exportAccuracyReportBtn" class="secondary-btn">Export accuracy report</button>
+            <button id="markReviewedBtn" class="secondary-btn">Mark bills reviewed today</button>
+          </div>
+          <div id="accuracySummary" class="status-box">Accuracy audit will appear here.</div>
+        </section>
+
+        <section class="card accuracy-panel">
+          <div class="section-header">
+            <div>
+              <h2>Trust ledger</h2>
+              <p>Shows which bills are verified, estimated, missing proof, or disagreeing with imported transactions.</p>
+            </div>
+          </div>
+          <div id="trustLedger" class="trust-ledger"></div>
+        </section>
+
+        <section class="card accuracy-panel">
+          <div class="section-header">
+            <div>
+              <h2>Reconciliation queue</h2>
+              <p>High-priority accuracy issues to fix before using the budget and forecast as truth.</p>
+            </div>
+          </div>
+          <div id="reconciliationQueue" class="insight-list"></div>
+        </section>
+
+        <section class="card accuracy-panel">
+          <div class="section-header">
+            <div>
+              <h2>CSV import diagnostics</h2>
+              <p>Checks whether the app understood your bank/card export correctly, including date, merchant, amount, debit, credit, and duplicate handling.</p>
+            </div>
+          </div>
+          <div id="csvDiagnostics" class="diagnostic-grid"></div>
+        </section>
+
+        <section class="card accuracy-panel">
+          <div class="section-header">
+            <div>
+              <h2>Assumption log</h2>
+              <p>Anything the app estimated is listed here so you know exactly what still needs your input.</p>
+            </div>
+          </div>
+          <div id="assumptionLog" class="insight-list"></div>
+        </section>
+      </section>
 
       <section id="transactions" class="screen">
         <section class="card">
@@ -444,6 +514,20 @@
                 <option value="balanced">Balanced</option>
                 <option value="aggressive">Aggressive saver</option>
                 <option value="gentle">Gentle reminders</option>
+              </select>
+            </label>
+            <label>Accuracy mode
+              <select id="strictAccuracyInput">
+                <option value="on">Strict - flag missing proof</option>
+                <option value="off">Flexible - fewer warnings</option>
+              </select>
+            </label>
+            <label>Amount mismatch tolerance
+              <select id="amountToleranceInput">
+                <option value="5">5% strict</option>
+                <option value="10">10% normal</option>
+                <option value="15">15% flexible</option>
+                <option value="25">25% variable bills</option>
               </select>
             </label>
           </div>
@@ -609,6 +693,17 @@
             <option value="useful">Useful</option>
             <option value="nice-to-have">Nice-to-have</option>
           </select>
+        </label>
+        <label>Amount confidence
+          <select id="billAmountStatus">
+            <option value="verified">Verified exact amount</option>
+            <option value="estimate">Estimated / approximate</option>
+            <option value="variable">Variable amount</option>
+            <option value="needs-review">Needs review</option>
+          </select>
+        </label>
+        <label>Last verified date
+          <input id="billVerifiedAt" type="date" />
         </label>
         <label>Trial ends / cancel-by date
           <input id="trialEndDate" type="date" />

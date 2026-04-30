@@ -217,3 +217,31 @@ The app is still built for your personal-only use. Keep using manual entry and C
 4. Import a bank/card CSV inside the app, not into GitHub.
 5. Open **Command Center** and follow the operating plan.
 6. Export an encrypted backup and store it somewhere private.
+
+## 100X Accuracy upgrade
+
+This build adds an Accuracy Center so the app is not just advanced; it shows how much you can trust each number.
+
+New accuracy features:
+
+- Data confidence score for the whole app.
+- Trust ledger for every bill/subscription.
+- Amount confidence: verified, estimated, variable, or needs review.
+- Last verified date for each bill.
+- Reconciliation queue for missing recurring charges, stale bills, amount mismatches, price changes, and duplicates.
+- Stronger CSV importer with automatic date/name/amount/debit/credit/account/category mapping.
+- CSV import diagnostics showing parsed rows, duplicates, skipped rows, and mapped columns.
+- Better recurring-charge detection using cadence, amount variance, recency, and confidence scoring.
+- Accuracy report export for a private audit file.
+- Strict Accuracy Mode and amount mismatch tolerance in Settings.
+
+Recommended workflow:
+
+1. Add your bills manually.
+2. Mark each bill amount as verified after checking the provider or statement.
+3. Set the Last verified date.
+4. Import 2-3 months of CSV transactions from your bank/card.
+5. Open Accuracy and tap Run accuracy audit.
+6. Fix the Reconciliation queue before relying on forecasts.
+
+Important: imported CSV data stays in your browser/device. Do not upload bank CSV files to GitHub.
